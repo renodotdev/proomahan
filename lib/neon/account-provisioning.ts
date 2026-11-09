@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { getAuth,getVerifiedSession } from "./auth-server.ts";
+import { getAuthAdmin,getVerifiedSession } from "./auth-server.ts";
 import { getDatabase } from "./database.ts";
 import { DatabaseAccessError,validUuid,withActorTenant } from "./tenant-context.ts";
 import { normalizePhone } from "../phone.ts";
@@ -21,7 +21,7 @@ export async function provisionResidentAccount(body:Record<string,unknown>){
   await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[phone]);
   const duplicate=await db.query("SELECT id FROM app_private.phone_login_identifiers WHERE phone_e164=$1 AND disabled_at IS NULL UNION ALL SELECT id FROM app.tenant_memberships WHERE tenant_id=$2 AND person_id=$3",[phone,body.tenantId,body.personId]);
   if(duplicate.rows.length)throw new DatabaseAccessError("Nomor login atau warga ini sudah memiliki akun.",409);
-  const {data,error}=await getAuth().admin.createUser({email:`${randomUUID()}@accounts.proomahan.invalid`,name:person.rows[0].full_name,password:body.password,role:"user"});
+  const {data,error}=await getAuthAdmin().createUser({email:`${randomUUID()}@accounts.proomahan.invalid`,name:person.rows[0].full_name,password:body.password,role:"user"});
   if(error||!data?.user)throw new DatabaseAccessError("Layanan pembuatan akun belum tersedia. Pastikan akun Super Administrator telah disiapkan.",503);
   createdId=data.user.id;
   await db.query("INSERT INTO app.user_profiles(user_id,display_name,provisioned_by,must_change_password) VALUES ($1,$2,$3,true)",[createdId,person.rows[0].full_name,session.user.id]);
@@ -31,7 +31,7 @@ export async function provisionResidentAccount(body:Record<string,unknown>){
   await db.query("COMMIT");return {success:true};
  }catch(error){
   await db.query("ROLLBACK");
-  if(createdId){const result=await getAuth().admin.removeUser({userId:createdId});if(result.error)throw new DatabaseAccessError("Pembuatan akun belum selesai. Hubungi operator untuk meninjau identitas yang belum terhubung.",503);}
+  if(createdId){const result=await getAuthAdmin().removeUser({userId:createdId});if(result.error)throw new DatabaseAccessError("Pembuatan akun belum selesai. Hubungi operator untuk meninjau identitas yang belum terhubung.",503);}
   throw error;
  }finally{db.release();}
 }

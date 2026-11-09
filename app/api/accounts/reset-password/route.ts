@@ -1,4 +1,4 @@
-import { getAuth,getVerifiedSession } from "@/lib/neon/auth-server";
+import { getAuthAdmin,getVerifiedSession } from "@/lib/neon/auth-server";
 import { getDatabase } from "@/lib/neon/database";
 import { withActorTenant,DatabaseAccessError,validUuid } from "@/lib/neon/tenant-context";
 import { assertSameOrigin,jsonBody,apiError } from "@/lib/neon/request";
@@ -17,10 +17,10 @@ export async function POST(request:Request){
   },["super_admin"]);
   // Close access before changing credentials; a provider failure leaves a safe password-change gate.
   await getDatabase().query("UPDATE app.user_profiles SET must_change_password=true WHERE user_id=$1",[userId]);
-  const auth=getAuth();
-  const changed=await auth.admin.setUserPassword({userId,newPassword:body.password});
+  const admin=getAuthAdmin();
+  const changed=await admin.setUserPassword({userId,newPassword:body.password});
   if(changed.error)throw new DatabaseAccessError("Kata sandi belum dapat diatur ulang. Silakan coba lagi.",503);
-  const revoked=await auth.admin.revokeUserSessions({userId});
+  const revoked=await admin.revokeUserSessions({userId});
   if(revoked.error)throw new DatabaseAccessError("Sesi belum seluruhnya ditutup. Silakan ulangi pengaturan kata sandi.",503);
   await getDatabase().query("INSERT INTO app.audit_events(tenant_id,actor_user_id,action,entity_type,entity_id) VALUES ($1,$2,'account.password_reset','user',$3)",[body.tenantId,session.user.id,userId]);
   return Response.json({success:true},{headers:{"Cache-Control":"private, no-store"}});
