@@ -1,0 +1,34 @@
+Proomahan Neon application-schema verification — 8 November 2026
+
+Isolated development branch: schema-validation-20261108
+PASS 29 live schema, financial, tenant-isolation and RBAC checks on schema-validation-20261108
+PASS server pool role and tenant settings reset after transaction
+PASS financial fixtures rolled back; no production test data written
+
+Production migration command: npm run db:migrate
+Applied 0001_application_schema.sql
+Applied 0002_integrity_and_access.sql
+Applied 0003_additional_guards.sql
+Applied 0004_billing_selection_and_audit.sql
+Applied 0005_numeric_and_query_guards.sql
+Applied 0006_record_versions.sql
+
+Production server connection: npm run db:status
+Connected: 47 application tables, 6 migrations
+Neighborhoods: D'Park City (dpark-city)
+
+Repeated production migration command:
+Unchanged 0001_application_schema.sql
+Unchanged 0002_integrity_and_access.sql
+Unchanged 0003_additional_guards.sql
+Unchanged 0004_billing_selection_and_audit.sql
+Unchanged 0005_numeric_and_query_guards.sql
+Unchanged 0006_record_versions.sql
+
+npm test: 58 passed, 0 failed
+npm run typecheck: passed
+npm run build: compiled successfully; /api/neighborhoods/[tenantId] included as a dynamic server route
+Production-build API check: Neighborhood API signed-out access: 401
+
+Production seed: D'Park City tenant only. No demo residents, financial records or administrator roles imported.
+UI feature adapters remain pending; the main prototype still uses localStorage.

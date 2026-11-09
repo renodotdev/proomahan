@@ -1,0 +1,70 @@
+Proomahan — Neon verification, 8 November 2026
+Sanitized excerpts captured from successful command results.
+
+$ neon deploy
+Auth complete (profile DEFAULT)
+→ Applying to branch production (br-autumn-block-a1ke6brf)
+Applied changes
+  + bucket assets
+Utilized services: Postgres, Neon Auth, Object Storage
+Pulled 11 Neon variables into .env.local
+
+$ neon config plan
+→ Planning against branch production (br-autumn-block-a1ke6brf)
+No changes — branch production already matches the policy.
+Utilized services: Postgres, Neon Auth, Object Storage
+
+$ npm run build
+> next build
+▲ Next.js 16.4.5 (Turbopack)
+- Environments: .env.local
+✓ Compiled successfully in 124ms
+  Finished TypeScript in 205ms
+✓ Generating static pages using 9 workers (5/5) in 162ms
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/[...path]
+├ ƒ /api/documents
+├ ƒ /documents
+├ ○ /icon.svg
+└ ○ /sign-in
+Exit code: 0
+
+$ npm run start -- --port 3001
+> next start --hostname 0.0.0.0 --port 3001
+▲ Next.js 16.4.5
+- Local: http://localhost:3001
+✓ Ready in 47ms
+
+$ npm run typecheck
+> tsc --noEmit
+Exit code: 0
+
+$ npm test
+ℹ tests 58
+ℹ pass 58
+ℹ fail 0
+Exit code: 0
+
+$ npm run neon:verify
+PASS PostgreSQL: parameterized write/read in a rolled-back temporary table
+PASS access control: signed-out API denied (401), page redirected (307)
+PASS manual accounts: public app sign-up blocked (403)
+PASS Auth + PostgreSQL: sign-in, restored session, protected owner profile query (200)
+PASS Auth: incorrect password rejected (401)
+PASS Object Storage: upload (201), list (200), exact-byte download (200), invalid content rejected (400)
+PASS ownership: second account cannot list, read, or delete the first account's document
+PASS cleanup flow: delete (200), sign-out (200), subsequent protected request denied (401)
+Cleanup: removed 2 temporary Auth test accounts
+Exit code: 0
+
+Production Auth policy applied after fixture cleanup:
+  Disable Sign Up: true
+  Revoke Sessions On Reset: true
+  Require Verification: false
+  Send Email On Sign Up: false
+  Send Email On Sign In: false
+
+Limit: main dashboard billing/resident/cash data is still a local prototype.
+No Vercel deployment was performed.

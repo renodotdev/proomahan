@@ -1,0 +1,55 @@
+Proomahan phone login and live core integration — 8 November 2026
+
+Production migration:
+Unchanged 0001_application_schema.sql
+Unchanged 0002_integrity_and_access.sql
+Unchanged 0003_additional_guards.sql
+Unchanged 0004_billing_selection_and_audit.sql
+Unchanged 0005_numeric_and_query_guards.sql
+Unchanged 0006_record_versions.sql
+Applied 0007_phone_login.sql
+
+Production database status:
+Connected: 47 application tables, 7 migrations
+Neighborhoods: D'Park City (dpark-city)
+
+Final isolated production-build integration test:
+$ npm run neon:verify -- schema-validation-phone-core-final-20261108
+PASS 59 live phone/password, bootstrap, resident CRUD, occupancy, account provisioning, password-change, isolation and storage checks
+PASS no SMS/email verification; upstream public signup restored to disabled
+PASS old session revoked after password change; resident cannot administer or read another resident
+All fixture identities and records are confined to the disposable test branch.
+Exit code: 0
+
+$ npm test
+60 passed, 0 failed
+
+$ npm run typecheck
+Exit code: 0
+
+$ npm run build
+Compiled successfully; static pages generated and server routes included.
+Routes include /sign-in, /workspace, /api/login/phone, /api/workspace,
+/api/accounts, /api/accounts/reset-password, /api/account/password,
+scoped core-record and occupancy routes, and the private document API.
+Exit code: 0
+
+Browser review:
+Phone sign-in page reviewed at desktop and 390px mobile viewport.
+Phone input type: tel, height: 46px.
+Password input type: password, height: 46px.
+Mobile document width: 390px; viewport: 390px; no horizontal overflow.
+Desktop/mobile screenshots saved; viewport override reset.
+Signed-in data workflows were verified through real HTTP API tests.
+
+Cleanup:
+Deleted schema-validation-phone-core-20261108.
+Deleted schema-validation-phone-core-final-20261108.
+No synthetic resident/account/financial data imported into production.
+
+Required operator action:
+Run npm run setup:admin locally to enter the real first-administrator password privately.
+Approved name/phone are in ignored local settings. No production password was invented,
+printed, passed through command arguments or saved to an env file.
+
+Remaining broader prototype modules are listed in docs/17-phone-login-and-live-core.md.

@@ -1,0 +1,128 @@
+"use client";
+import { useCallback,useEffect,useId,useRef,useState,type FormEvent } from "react";
+import Link from "next/link";
+import { Building2,UsersRound,House,Plus,ListPlus,Search,Pencil,ChevronLeft,ChevronRight,LogOut,FileText,LogIn,KeyRound,X,RefreshCw } from "lucide-react";
+import { authClient } from "@/lib/neon/auth-client";
+import { bulkColumns,bulkInput,bulkRowLimit,recordBodyLimit } from "@/lib/neon/bulk-input";
+import type { CoreResource } from "@/lib/neon/core-input";
+
+type Row={has_account?:boolean;id:string;row_version:string;code?:string;name?:string;full_name?:string;phone?:string;email?:string;documents_url?:string;cluster_id?:string;cluster_name?:string;number?:string;address_detail?:string;available_for_rent?:boolean;owner?:string;occupant?:string;archived_at?:string|null};
+type Identity={name:string;phone:string;mustChangePassword:boolean;tenants:{id:string;name:string}[];selectedTenant?:{roles:string[];cluster_count:number}};
+type Listing={rows:Row[];total:number;page:number;pageSize:number;canManage:boolean};
+const titles={clusters:"Klaster",people:"Warga",units:"Unit hunian"};
+async function api(url:string,options?:RequestInit){
+ const response=await fetch(url,{...options,cache:"no-store",headers:{"Content-Type":"application/json",...options?.headers}});
+ if(response.status===401){window.location.assign("/sign-in");throw new Error("Silakan masuk terlebih dahulu.");}
+ const data=await response.json();if(!response.ok)throw new Error(data.error||"Data belum dapat dimuat.");return data;
+}
+export default function LiveWorkspace(){
+ const [identity,setIdentity]=useState<Identity|null>(null);const [tenant,setTenant]=useState("");
+ const [resource,setResource]=useState<CoreResource>("units");const [listing,setListing]=useState<Listing>({rows:[],total:0,page:1,pageSize:20,canManage:false});
+ const [query,setQuery]=useState("");const [search,setSearch]=useState("");const [status,setStatus]=useState("active");const [cluster,setCluster]=useState("");const [clusters,setClusters]=useState<Row[]>([]);
+ const [page,setPage]=useState(1);const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [notice,setNotice]=useState("");const [editing,setEditing]=useState<Row|null|undefined>(undefined);const [occupancy,setOccupancy]=useState<{unit:Row;action:string}|null>(null);
+ const [accountPerson,setAccountPerson]=useState<Row|null>(null);
+ const [bulkEditing,setBulkEditing]=useState(false);
+ const [passwordChange,setPasswordChange]=useState(false);
+ const serial=useRef(0);
+ useEffect(()=>{api("/api/workspace").then((data:Identity)=>{setIdentity(data);setTenant(data.tenants[0]?.id||"");}).catch(e=>setError(e.message));},[]);
+ useEffect(()=>{const timer=setTimeout(()=>{setSearch(query.trim());setPage(1);},250);return()=>clearTimeout(timer);},[query]);
+ const load=useCallback(async()=>{
+  if(!tenant || identity?.mustChangePassword)return;
+  const token=++serial.current;setBusy(true);setError("");
+  try{
+   const [data,info,choices]=await Promise.all([
+    api(`/api/neighborhoods/${tenant}/records/${resource}?`+new URLSearchParams({q:search,status,page:String(page),...(resource==="units"&&cluster?{cluster}:{})})),
+    api(`/api/workspace?tenantId=${tenant}`),
+    api(`/api/neighborhoods/${tenant}/records/clusters?status=all`),
+   ]);
+   if(token!==serial.current)return;
+   setListing(data);setIdentity(info);setClusters(choices.rows);
+  }catch(e){if(token===serial.current){setListing({rows:[],total:0,page:1,pageSize:20,canManage:false});setError(e instanceof Error?e.message:"Data belum dapat dimuat.");}}
+  finally{if(token===serial.current)setBusy(false);}
+ },[tenant,identity?.mustChangePassword,resource,search,status,page,cluster]);
+ useEffect(()=>{load();},[load]);
+ function choose(value:CoreResource){setResource(value);setPage(1);setQuery("");setSearch("");setCluster("");setNotice("");setError("");}
+ async function save(body:object,row?:Row){
+  await api(`/api/neighborhoods/${tenant}/records/${resource}${row?'/'+row.id:''}`,{method:row?"PATCH":"POST",body:JSON.stringify({...body,...(row?{rowVersion:row.row_version}:{})})});
+  setEditing(undefined);setNotice("Data berhasil disimpan.");await load();
+ }
+ async function signOut(){setBusy(true);try{const result=await authClient.signOut();if(result.error)throw new Error();window.location.assign("/sign-in");}catch{setError("Belum dapat keluar. Silakan coba lagi.");setBusy(false);}}
+ if(identity&&(identity.mustChangePassword||passwordChange))return <main className="neon-workspace"><PasswordForm onDone={()=>{setPasswordChange(false);setIdentity({...identity,mustChangePassword:false});setNotice("Kata sandi berhasil diperbarui.");}}/>{!identity.mustChangePassword&&<button className="button secondary" onClick={()=>setPasswordChange(false)}>Kembali</button>}<button className="button secondary" onClick={signOut}>Keluar</button></main>;
+ return <div className="live-shell"><header className="live-topbar"><Link href="/workspace" className="live-brand">proomahan<span>.</span></Link><div><button className="button secondary" disabled={busy||!identity} onClick={()=>setPasswordChange(true)}><KeyRound size={16}/>Ubah sandi</button><Link href="/documents" className="button secondary"><FileText size={16}/>Dokumen saya</Link><button className="button secondary" disabled={busy} onClick={signOut}><LogOut size={16}/>Keluar</button></div></header><main className="live-main"><div className="page-heading"><div><span className="eyebrow">LINGKUNGAN TERTATA, WARGA NYAMAN</span><h1>Ruang {identity?.name||"warga"}</h1><p>{identity?.phone||"Memuat akun…"}</p></div>{identity&&identity.tenants.length>0&&<label className="field"><span>Lingkungan</span><select value={tenant} onChange={e=>{setTenant(e.target.value);setPage(1);setCluster("");}}>{identity.tenants.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>}</div>{error&&<div className="live-alert" role="alert">{error}<button className="text-button" onClick={load}><RefreshCw size={15}/>Coba lagi</button></div>}{notice&&<div className="info-note" role="status">{notice}</div>}{identity&&!identity.tenants.length?<section className="panel live-panel"><h2>Akses lingkungan belum tersedia</h2><p>Hubungi Super Administrator untuk mengaktifkan keanggotaan Anda.</p></section>:<><nav className="live-tabs" aria-label="Data lingkungan">{([["units",House],["people",UsersRound],["clusters",Building2]] as const).map(([key,Icon])=><button key={key} className={resource===key?"active":""} aria-current={resource===key?"page":undefined} onClick={()=>choose(key)}><Icon size={18}/>{titles[key]}</button>)}</nav><section className="panel live-panel"><div className="live-section-heading"><div><h2>{titles[resource]}</h2><p>{listing.total} data lingkungan</p></div>{listing.canManage&&<div className="live-section-actions">{(resource!=="units"||!!identity?.selectedTenant?.cluster_count)&&<button className="button secondary" disabled={busy} onClick={()=>setBulkEditing(true)}><ListPlus size={16}/>Tambah sekaligus</button>}<button className="button primary" disabled={busy} onClick={()=>resource==="units"&&identity?.selectedTenant?.cluster_count===0?choose("clusters"):setEditing(null)}><Plus size={16}/>{resource==="units"&&identity?.selectedTenant?.cluster_count===0?"Tambah klaster dahulu":`Tambah ${titles[resource].toLowerCase()}`}</button></div>}</div><div className="live-filters"><label className="live-search"><Search size={18}/><input aria-label="Cari data" value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Cari ${titles[resource].toLowerCase()}…`}/></label><label className="field"><span>Status</span><select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="active">Aktif</option><option value="archived">Diarsipkan</option><option value="all">Semua status</option></select></label>{resource==="units"&&<label className="field"><span>Klaster</span><select value={cluster} onChange={e=>{setCluster(e.target.value);setPage(1);}}><option value="">Semua klaster</option>{clusters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}</div><div aria-busy={busy} className="live-table-wrap"><table className="live-table"><thead><tr>{resource==="clusters"?<><th>Nama klaster</th><th>Kode</th></>:resource==="people"?<><th>Nama warga</th><th>Nomor telepon</th><th>Dokumen</th></>:<><th>Unit</th><th>Klaster</th><th>Pemilik</th><th>Penghuni</th></>}<th>Status</th>{listing.canManage&&<th>Aksi</th>}</tr></thead><tbody>{listing.rows.map(row=><tr key={row.id}>{resource==="clusters"?<><td><strong>{row.name}</strong></td><td>{row.code}</td></>:resource==="people"?<><td><strong>{row.full_name}</strong>{row.email&&<small>{row.email}</small>}</td><td>{row.phone}</td><td>{row.documents_url?<a className="text-button" href={row.documents_url} target="_blank" rel="noopener noreferrer">Buka dokumen ↗</a>:"Belum diisi"}</td></>:<><td><strong>{row.number}</strong>{row.available_for_rent&&<small>Unit sewa</small>}</td><td>{row.cluster_name}</td><td>{row.owner||"Belum ditetapkan"}</td><td>{row.occupant||"Kosong"}</td></>}<td><span className={`live-status ${row.archived_at?'archived':''}`}>{row.archived_at?"Diarsipkan":"Aktif"}</span></td>{listing.canManage&&<td><div className="live-row-actions"><button className="button secondary compact" onClick={()=>setEditing(row)}><Pencil size={14}/>Ubah</button>{resource==="people"&&!row.archived_at&&identity?.selectedTenant?.roles.includes("super_admin")&&<button className="button secondary compact" onClick={()=>setAccountPerson(row)}><KeyRound size={14}/>{row.has_account?"Atur ulang sandi":"Buat akun"}</button>}{resource==="units"&&!row.archived_at&&<><button className="button secondary compact" onClick={()=>setOccupancy({unit:row,action:row.occupant?'check_out':'check_in'})}>{row.occupant?<LogOut size={14}/>:<LogIn size={14}/>} {row.occupant?"Check-out":"Check-in"}</button><button className="button secondary compact" onClick={()=>setOccupancy({unit:row,action:'owner'})}><KeyRound size={14}/>Pemilik</button></>}</div></td>}</tr>)}</tbody></table>{!listing.rows.length&&!busy&&<div className="live-empty"><Building2 size={30}/><h3>{search||status!=="active"?"Tidak ada data yang sesuai":"Belum ada data"}</h3><p>{listing.canManage?"Tambahkan data pertama atau ubah pencarian dan filter.":"Data yang berhak Anda akses akan tampil di sini."}</p></div>}{busy&&<p className="live-loading" role="status">Memuat data…</p>}</div><div className="live-pagination"><span>{listing.total?`${(listing.page-1)*20+1}–${Math.min(listing.page*20,listing.total)} dari ${listing.total}`:"0 data"}</span><div><button className="button secondary compact" disabled={busy||listing.page<=1} onClick={()=>setPage(listing.page-1)}><ChevronLeft size={16}/>Sebelumnya</button><span>Halaman {listing.page} dari {Math.ceil(listing.total/20)||1}</span><button className="button secondary compact" disabled={busy||listing.page*20>=listing.total} onClick={()=>setPage(listing.page+1)}>Berikutnya<ChevronRight size={16}/></button></div></div></section></>}{accountPerson&&<AccountEditor person={accountPerson} tenant={tenant} onClose={()=>setAccountPerson(null)} onSaved={async()=>{setAccountPerson(null);setNotice("Akun diperbarui. Sampaikan akses sementara kepada warga secara pribadi.");await load();}}/>}{bulkEditing&&<BulkEditor resource={resource} tenant={tenant} onClose={()=>setBulkEditing(false)} onSaved={async count=>{setBulkEditing(false);setNotice(`${count} data berhasil ditambahkan.`);await load();}}/>}{editing!==undefined&&<RecordEditor resource={resource} row={editing} tenant={tenant} onClose={()=>setEditing(undefined)} onSave={save}/ >}{occupancy&&<OccupancyEditor {...occupancy} tenant={tenant} onClose={()=>setOccupancy(null)} onSaved={async()=>{setOccupancy(null);setNotice("Riwayat hunian berhasil diperbarui.");await load();}}/>}</main></div>;
+}
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}){
+ const titleId=useId();
+ const ref=useRef<HTMLDialogElement>(null);useEffect(()=>{ref.current?.showModal();},[]);
+ return <dialog ref={ref} className="modal live-modal" aria-labelledby={titleId} onCancel={event=>{event.preventDefault();close();}}><div className="modal-heading"><h2 id={titleId}>{title}</h2><button className="button secondary compact" aria-label="Tutup" onClick={close}><X size={18}/></button></div>{children}</dialog>;
+}
+function BulkEditor({resource,tenant,onClose,onSaved}:{resource:CoreResource;tenant:string;onClose:()=>void;onSaved:(count:number)=>Promise<void>}) {
+ const [text,setText]=useState("");
+ const [busy,setBusy]=useState(false);
+ const [error,setError]=useState("");
+ const columns=bulkColumns[resource];
+ const example=columns.map(column=>column.example).join("\t");
+
+ async function submit(event:FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  setError("");
+  const body=JSON.stringify({bulkText:text});
+  try {
+   if(new TextEncoder().encode(body).length>recordBodyLimit) throw new Error("Data terlalu panjang. Bagi data menjadi beberapa kelompok.");
+   bulkInput(resource,text);
+   setBusy(true);
+   const {created}=await api(`/api/neighborhoods/${tenant}/records/${resource}`,{method:"POST",body});
+   await onSaved(created);
+  } catch(error) {
+   setError(error instanceof Error?error.message:"Data belum tersimpan.");
+   setBusy(false);
+  }
+ }
+
+ return <Modal title={`Tambah ${titles[resource].toLowerCase()} sekaligus`} close={busy?()=>{}:onClose}>
+  <form onSubmit={submit}>
+   <div className="form-body live-form live-bulk-form">
+    <p id="bulk-instructions">Salin hingga {bulkRowLimit} baris dari Excel atau Google Sheets, tanpa judul kolom. Kolom bertanda * wajib diisi. Atur nomor telepon dan kode sebagai teks agar nol di depan tetap tersalin.</p>
+    <div className="live-bulk-example">
+     <strong>Urutan kolom</strong>
+     <p id="bulk-columns">{columns.map(column=>column.label).join(" · ")}</p>
+     <strong>Contoh satu baris</strong>
+     <pre>{example}</pre>
+    </div>
+    <label className="field"><span>Tempel data spreadsheet</span>
+     <textarea value={text} onChange={event=>{setText(event.target.value);setError("");}} aria-describedby="bulk-instructions bulk-columns" required disabled={busy} spellCheck={false}/>
+    </label>
+    <p>Semua baris disimpan bersama. Jika ada kesalahan, perbaiki baris tersebut lalu coba lagi.</p>
+    {error&&<p className="live-alert" role="alert">{error}</p>}
+   </div>
+   <div className="form-footer">
+    <button type="button" className="button secondary" onClick={onClose} disabled={busy}>Batal</button>
+    <button className="button primary" disabled={busy||!text.trim()}>{busy?"Menyimpan…":"Simpan semua"}</button>
+   </div>
+  </form>
+ </Modal>;
+}
+
+function RecordEditor({resource,row,tenant,onClose,onSave}:{resource:CoreResource;row:Row|null;tenant:string;onClose:()=>void;onSave:(body:object,row?:Row)=>Promise<void>}){
+ const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [choices,setChoices]=useState<Row[]>([]);const [q,setQ]=useState("");
+ useEffect(()=>{if(resource!=="units")return;let active=true;api(`/api/neighborhoods/${tenant}/records/clusters?q=${encodeURIComponent(q)}`).then(data=>{if(active)setChoices(data.rows);}).catch(()=>{if(active)setError("Daftar klaster belum dapat dimuat.");});return()=>{active=false;};},[resource,tenant,q]);
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");const f=new FormData(e.currentTarget);const body=Object.fromEntries(f);try{await onSave({...body,archived:f.get("archived")==="on",availableForRent:f.get("availableForRent")==="on"},row||undefined);}catch(e){setError(e instanceof Error?e.message:"Data belum tersimpan.");setBusy(false);}}
+ return <Modal title={`${row?'Ubah':'Tambah'} ${titles[resource].toLowerCase()}`} close={busy?()=>{}:onClose}><form onSubmit={submit}><div className="form-body live-form">{resource==="clusters"?<><label className="field"><span>Nama klaster *</span><input name="name" defaultValue={row?.name} required maxLength={100}/></label><label className="field"><span>Kode klaster *</span><input name="code" defaultValue={row?.code} required maxLength={20} placeholder="Contoh: A"/></label></>:resource==="people"?<><label className="field"><span>Nama lengkap *</span><input name="fullName" defaultValue={row?.full_name} required maxLength={200}/></label><label className="field"><span>Nomor telepon *</span><input name="phone" type="tel" defaultValue={row?.phone} required maxLength={25}/><small>Nomor kontak ini tidak otomatis mengubah nomor login.</small></label><label className="field"><span>Email kontak (opsional)</span><input name="email" type="email" defaultValue={row?.email}/></label><label className="field"><span>URL penyimpanan dokumen (opsional)</span><input name="documentsUrl" type="url" defaultValue={row?.documents_url} placeholder="https://drive.google.com/…"/></label></>:<><label className="field"><span>Nomor unit *</span><input name="number" defaultValue={row?.number} required maxLength={50}/></label><label className="field"><span>Cari klaster</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Ketik nama atau kode klaster"/></label><label className="field"><span>Klaster *</span><select name="clusterId" defaultValue={row?.cluster_id||""} required><option value="">Pilih klaster</option>{row?.cluster_id&&!choices.some(c=>c.id===row.cluster_id)&&<option value={row.cluster_id}>{row.cluster_name}</option>}{choices.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="field"><span>Detail alamat</span><input name="addressDetail" defaultValue={row?.address_detail} maxLength={500}/></label><label className="live-check"><input name="availableForRent" type="checkbox" defaultChecked={row?.available_for_rent}/>Unit tersedia untuk disewakan</label></>}{row&&<label className="live-check"><input name="archived" type="checkbox" defaultChecked={!!row.archived_at}/>Arsipkan data ini</label>}{error&&<div className="live-alert" role="alert">{error}</div>}</div><div className="form-footer"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>Batal</button><button className="button primary" disabled={busy}>{busy?'Menyimpan…':'Simpan'}</button></div></form></Modal>;
+}
+function OccupancyEditor({unit,action,tenant,onClose,onSaved}:{unit:Row;action:string;tenant:string;onClose:()=>void;onSaved:()=>Promise<void>}){
+ const [people,setPeople]=useState<Row[]>([]);const [q,setQ]=useState("");const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [person,setPerson]=useState("");
+ useEffect(()=>{let active=true;if(action==='check_out')return;api(`/api/neighborhoods/${tenant}/records/people?q=${encodeURIComponent(q)}`).then(data=>{if(active)setPeople(data.rows);}).catch(()=>{if(active)setError("Daftar warga belum dapat dimuat.");});return()=>{active=false;};},[tenant,q,action]);
+ const title=action==='owner'?'Tetapkan pemilik':action==='check_in'?'Check-in penghuni':'Check-out penghuni';
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");try{await api(`/api/neighborhoods/${tenant}/units/${unit.id}/occupancy`,{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(e.currentTarget)),action})});await onSaved();}catch(e){setError(e instanceof Error?e.message:'Belum tersimpan.');setBusy(false);}}
+ return <Modal title={`${title} · ${unit.number}`} close={busy?()=>{}:onClose}><form onSubmit={submit}><div className="form-body live-form">{action!=='check_out'&&<><label className="field"><span>Cari warga</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Nama atau nomor telepon"/></label><label className="field"><span>Nama warga *</span><select name="personId" required value={person} onChange={e=>setPerson(e.target.value)}><option value="">Pilih warga</option>{people.map(p=><option key={p.id} value={p.id}>{p.full_name} · {p.phone}</option>)}</select></label></>}{action==='check_in'&&<label className="field"><span>Jenis hunian</span><select name="occupancyType"><option value="rented">Disewa</option><option value="owner_occupied">Dihuni pemilik</option><option value="caretaker">Penjaga rumah</option><option value="other">Lainnya</option></select></label>}<label className="field"><span>{action==='check_out'?'Tanggal keluar':'Tanggal mulai'} *</span><input name="date" type="date" required/><small>{action==='check_out'?'Mulai tanggal ini, penghuni tidak lagi menempati unit.':'Riwayat sebelumnya dan tagihan terbit tetap disimpan.'}</small></label>{action==='check_out'&&<p>Penghuni saat ini: <strong>{unit.occupant}</strong></p>}{error&&<div className="live-alert" role="alert">{error}</div>}</div><div className="form-footer"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>Batal</button><button className="button primary" disabled={busy}>{busy?'Menyimpan…':title}</button></div></form></Modal>;
+}
+function PasswordForm({onDone}:{onDone:()=>void}){
+ const [busy,setBusy]=useState(false);const [error,setError]=useState("");
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");const f=new FormData(e.currentTarget);if(f.get('newPassword')!==f.get('confirmation')){setError('Konfirmasi kata sandi belum sama.');setBusy(false);return;}try{await api('/api/account/password',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});onDone();}catch(e){setError(e instanceof Error?e.message:'Belum tersimpan.');}finally{setBusy(false);}}
+ return <section className="panel neon-auth-card"><h1>Atur kata sandi Anda</h1><p>Ganti kata sandi sementara sebelum mengakses data lingkungan.</p><form onSubmit={submit}><label>Kata sandi saat ini<input type="password" name="currentPassword" autoComplete="current-password" required/></label><label>Kata sandi baru<input type="password" name="newPassword" autoComplete="new-password" minLength={12} maxLength={128} required/></label><label>Ulangi kata sandi baru<input type="password" name="confirmation" autoComplete="new-password" required/></label>{error&&<p className="live-alert" role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy?'Menyimpan…':'Simpan kata sandi'}</button></form></section>;
+}
+
+function AccountEditor({person,tenant,onClose,onSaved}:{person:Row;tenant:string;onClose:()=>void;onSaved:()=>Promise<void>}){
+ const [busy,setBusy]=useState(false);const [error,setError]=useState("");
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError("");try{await api(person.has_account?'/api/accounts/reset-password':'/api/accounts',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(e.currentTarget)),tenantId:tenant,personId:person.id})});await onSaved();}catch(e){setError(e instanceof Error?e.message:'Akun belum dibuat.');setBusy(false);}}
+ return <Modal title={`${person.has_account?"Atur ulang kata sandi":"Buat akun"} · ${person.full_name}`} close={busy?()=>{}:onClose}><form onSubmit={submit}><div className="form-body live-form">{!person.has_account&&<label className="field"><span>Nomor telepon untuk login *</span><input name="phone" type="tel" required disabled={person.has_account} defaultValue={person.phone}/><small>Harus unik. Nomor kontak warga tetap disimpan terpisah.</small></label>}{person.has_account&&<p>Nomor login tidak berubah. Sesi aktif warga akan ditutup setelah kata sandi diatur ulang.</p>}<label className="field"><span>Kata sandi sementara *</span><input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required/><small>Minimal 12 karakter. Warga wajib menggantinya saat masuk pertama kali.</small></label><div className="info-note">Tidak ada SMS, email verifikasi, atau pendaftaran publik. Sampaikan akses ini kepada warga secara pribadi.</div>{error&&<p className="live-alert" role="alert">{error}</p>}</div><div className="form-footer"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>Batal</button><button className="button primary" disabled={busy}>{busy?'Menyimpan…':person.has_account?'Atur ulang sandi':'Buat akun'}</button></div></form></Modal>;
+}
