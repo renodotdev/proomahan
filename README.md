@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`; the homepage redirects to `/workspace`, which requires a real account. Run `npm run setup:admin` to create the initial administrator, then sign in at `/sign-in`. Old browser preview snapshots are removed when the app loads. Fictional datasets exist only as test fixtures.
+Open `http://localhost:3000`; signed-out visitors see the public landing page, while signed-in users continue to `/workspace`. The sign-in page includes a return link to the landing page. Run `npm run setup:admin` to create the initial administrator, then sign in at `/sign-in`. Old browser preview snapshots are removed when the app loads. Fictional datasets exist only as test fixtures.
 
 Checks: `npm test`, `npm run typecheck`, and `npm run build`. Historical prototype review documents describe the retired preview, not the current application.
 
