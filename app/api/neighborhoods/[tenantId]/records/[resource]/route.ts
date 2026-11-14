@@ -1,5 +1,5 @@
 import { getVerifiedSession } from "@/lib/neon/auth-server";
-import { listRecords,saveBulkRecords,saveRecord } from "@/lib/neon/core-records";
+import { deleteRecords,listRecords,saveBulkRecords,saveRecord } from "@/lib/neon/core-records";
 import { coreResource } from "@/lib/neon/core-input";
 import { DatabaseAccessError } from "@/lib/neon/tenant-context";
 import { assertSameOrigin,jsonBody,apiError } from "@/lib/neon/request";
@@ -11,9 +11,10 @@ async function handle(request:Request,context:Context) {
   if(!session?.user) throw new DatabaseAccessError("Silakan masuk terlebih dahulu.",401);
   const {tenantId,resource:value}=await context.params;
   let resource;try{resource=coreResource(value);}catch{throw new DatabaseAccessError("Data tidak ditemukan.",404);}
-  if(request.method==="POST") assertSameOrigin(request);
+  if(request.method!=="GET") assertSameOrigin(request);
   if(request.method==="GET") return Response.json(await listRecords(session.user.id,tenantId,resource,new URL(request.url)),{headers:{"Cache-Control":"private, no-store"}});
   const body=await jsonBody(request);
+  if(request.method==="DELETE") return Response.json(await deleteRecords(session.user.id,tenantId,resource,body),{headers:{"Cache-Control":"private, no-store"}});
   const result=Object.hasOwn(body,"bulkText")
    ? await saveBulkRecords(session.user.id,tenantId,resource,body.bulkText)
    : await saveRecord(session.user.id,tenantId,resource,body);
@@ -28,3 +29,4 @@ async function handle(request:Request,context:Context) {
 }
 export const GET=handle;
 export const POST=handle;
+export const DELETE=handle;

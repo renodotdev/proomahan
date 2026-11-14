@@ -109,3 +109,17 @@ input::placeholder,textarea::placeholder{color:#64766b;opacity:1}.footer-note{co
 .live-bulk-example { display: grid; gap: 6px; min-width: 0; }
 .live-bulk-example pre { margin: 0; overflow: auto; padding: 10px; background: #f5f7f8; border-radius: 6px; }
 .live-bulk-form textarea { min-height: 140px; tab-size: 4; }
+
+.live-selection-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 16px 0; color: #52665a; }
+.live-selection-cell { width: 48px; }
+.live-selection-cell input, .neon-document-list input[type=checkbox] { width: 20px; height: 20px; accent-color: #147d70; cursor: pointer; }
+.live-main .button.live-danger, .button.live-danger { background: #b42318; border: 1px solid #b42318; color: #fff; }
+.live-main .button.live-danger:hover, .button.live-danger:hover { background: #912018; color: #fff; }
+.live-main .button.live-danger-outline, .button.live-danger-outline { background: #fff; color: #9f231b; border-color: #e4c4bf; }
+.live-main .button.live-danger-outline:hover, .button.live-danger-outline:hover { background: #fff4f2; color: #821c15; }
+.live-delete-form p { margin: 0; }
+.live-delete-list { max-height: 180px; overflow-y: auto; margin: 0; padding-left: 24px; overflow-wrap: anywhere; }
+@media(max-width:760px) {
+ .neon-document-list input[type=checkbox] { flex: 0 0 20px; }
+ .neon-document-list li>span { flex-basis: calc(100% - 76px); }
+}

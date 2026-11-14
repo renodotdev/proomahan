@@ -1,0 +1,52 @@
+import nextEnv from "@next/env";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
+import { Client } from "pg";
+import { deleteRecords,saveRecord } from "../lib/neon/core-records.ts";
+import { getDatabase } from "../lib/neon/database.ts";
+
+nextEnv.loadEnvConfig(process.cwd());
+const branch=process.argv[2];
+if(!branch?.startsWith("schema-validation-delete-"))throw new Error("Use a disposable schema-validation-delete-* branch.");
+const connection=execFileSync("neon",["connection-string",branch,"--ssl","verify-full"],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
+process.env.DATABASE_URL=connection;
+const db=new Client({connectionString:connection,connectionTimeoutMillis:15000});
+try {
+ await db.connect();
+ const {user_id:actor}=(await db.query("SELECT r.user_id FROM app.platform_role_assignments r JOIN app.user_profiles p ON p.user_id=r.user_id WHERE r.revoked_at IS NULL AND r.starts_at<=now() AND p.status='active' AND NOT p.must_change_password LIMIT 1")).rows[0];
+ const tenant=(await db.query("INSERT INTO app.tenants(name,slug) VALUES ('Deletion verification',$1) RETURNING id",["delete-"+randomUUID()])).rows[0].id;
+ const other=(await db.query("INSERT INTO app.tenants(name,slug) VALUES ('Other verification',$1) RETURNING id",["delete-other-"+randomUUID()])).rows[0].id;
+ const first=await saveRecord(actor,tenant,"clusters",{code:"FREE",name:"Free"});
+ const linked=await saveRecord(actor,tenant,"clusters",{code:"LINKED",name:"Linked"});
+ const unit=await saveRecord(actor,tenant,"units",{number:"A-01",clusterId:linked.id});
+ const selection=(row:{id:string;row_version:string})=>({id:row.id,rowVersion:String(row.row_version)});
+ const remove=(rows:{id:string;row_version:string}[])=>deleteRecords(actor,tenant,"clusters",{records:rows.map(selection)});
+ await assert.rejects(remove([first,linked]),/terhubung/);
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM app.clusters WHERE tenant_id=$1",[tenant])).rows[0].n,2);
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM app.audit_events WHERE tenant_id=$1 AND action='clusters.deleted'",[tenant])).rows[0].n,0);
+ await assert.rejects(deleteRecords(actor,other,"clusters",{records:[selection(first)]}),/berubah|tersedia/);
+ await saveRecord(actor,tenant,"clusters",{code:"FREE",name:"Updated",rowVersion:String(first.row_version)},first.id);
+ await assert.rejects(remove([first]),/berubah/);
+ await db.query("UPDATE app.user_profiles SET must_change_password=true WHERE user_id=$1",[actor]);
+ await assert.rejects(deleteRecords(actor,tenant,"units",{records:[selection(unit)]}),/activation|setup|password change/);
+ await db.query("UPDATE app.user_profiles SET must_change_password=false WHERE user_id=$1",[actor]);
+ await deleteRecords(actor,tenant,"units",{records:[selection(unit)]});
+ const fresh=(await db.query("SELECT id,row_version FROM app.clusters WHERE tenant_id=$1",[tenant])).rows;
+ assert.deepEqual(await remove(fresh),{deleted:2});
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM app.clusters WHERE tenant_id=$1",[tenant])).rows[0].n,0);
+ await assert.rejects(remove(fresh),/berubah|tersedia/);
+ const person=await saveRecord(actor,tenant,"people",{fullName:"Deletion test",phone:"+6281200000000"});
+ const resident=randomUUID();
+ await db.query('INSERT INTO neon_auth."user"(id,name,email,"emailVerified","createdAt","updatedAt") VALUES ($1,\'Deletion verification\',$2,false,now(),now())',[resident,`delete-${resident}@example.test`]);
+ await db.query("INSERT INTO app.user_profiles(user_id,display_name,must_change_password) VALUES ($1,'Deletion verification',false)",[resident]);
+ await db.query("INSERT INTO app.tenant_memberships(tenant_id,user_id) VALUES ($1,$2)",[tenant,resident]);
+ await assert.rejects(deleteRecords(resident,tenant,"people",{records:[selection(person)]}),/role/);
+ await db.query("INSERT INTO app.tenant_memberships(tenant_id,user_id,person_id) VALUES ($1,$2,$3)",[tenant,actor,person.id]);
+ await assert.rejects(deleteRecords(actor,tenant,"people",{records:[selection(person)]}),/terhubung/);
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM app.platform_role_assignments WHERE user_id=$1 AND revoked_at IS NULL",[actor])).rows[0].n,1);
+ console.log("PASS: individual/bulk deletion, linked record rollback, audit rollback, tenant isolation, resident role denial, stale versions, password-change gates, safe retries, and linked account protection.");
+} finally {
+ await db.end();
+ await getDatabase().end();
+}

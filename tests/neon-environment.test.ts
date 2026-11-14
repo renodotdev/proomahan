@@ -41,6 +41,14 @@ test("phone login normalizes Indonesian local numbers and preserves internationa
 });
 
 import { coreInput,realDate } from "../lib/neon/core-input.ts";
+import { deleteInput,deleteLimit } from "../lib/neon/delete-input.ts";
+test("delete selections reject duplicate, oversized, or invalid record versions",()=>{
+ const record={id:"12345678-1234-1234-1234-123456789012",rowVersion:"1"};
+ assert.deepEqual(deleteInput([record]),[record]);
+ for(const input of [[],null,[record,record],Array(deleteLimit+1).fill(record),[{...record,rowVersion:"0"}],[{...record,rowVersion:"9223372036854775808"}],[{...record,rowVersion:1}],[{...record,id:"units; DROP TABLE"}]]) {
+  assert.throws(()=>deleteInput(input));
+ }
+});
 import { bulkColumns,bulkInput,bulkRowLimit } from "../lib/neon/bulk-input.ts";
 test("spreadsheet entry preserves identifiers, optional cells, and source row numbers",()=>{
  for(const resource of ["clusters","people","units"] as const){

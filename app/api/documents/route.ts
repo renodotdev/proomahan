@@ -3,6 +3,8 @@ import { getVerifiedSession } from "@/lib/neon/auth-server";
 import { getDatabase } from "@/lib/neon/database";
 import { getStorage } from "@/lib/neon/storage";
 import { documentExtension, documentPrefix, MAX_DOCUMENT_SIZE, ownedDocumentKey } from "@/lib/neon/document-key";
+import { apiError,jsonBody } from "@/lib/neon/request";
+import { DatabaseAccessError } from "@/lib/neon/tenant-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +21,22 @@ async function handle(request: Request) {
     const storage = getStorage();
     const url = new URL(request.url);
     const key = url.searchParams.get("key");
+    if(request.method==="DELETE"&&!key) {
+      const {keys}=await jsonBody(request);
+      if(!Array.isArray(keys)||!keys.length||keys.length>20||new Set(keys).size!==keys.length) {
+        throw new DatabaseAccessError("Pilih 1–20 dokumen yang berbeda.",400);
+      }
+      if(keys.some(key=>typeof key!=="string"||!ownedDocumentKey(userId,key))) {
+        throw new DatabaseAccessError("Dokumen tidak ditemukan.",404);
+      }
+      const deleted:string[]=[];
+      const failed:string[]=[];
+      for(const key of keys as string[]) {
+        try { await storage.delete(key);deleted.push(key); }
+        catch { failed.push(key); }
+      }
+      return Response.json({deleted,failed},{headers});
+    }
     if (key) {
       if (!ownedDocumentKey(userId, key)) return Response.json({ error: "Dokumen tidak ditemukan." }, { status: 404, headers });
       if (request.method === "DELETE") {
@@ -55,7 +73,8 @@ async function handle(request: Request) {
     const contentType = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg" }[extension];
     await storage.upload(newKey, bytes, { contentType });
     return Response.json({ key: newKey, size: bytes.length }, { status: 201, headers });
-  } catch {
+  } catch(error) {
+    if(error instanceof DatabaseAccessError)return apiError(error);
     return Response.json({ error: "Layanan dokumen belum tersedia. Silakan coba lagi." }, { status: 503, headers });
   }
 }

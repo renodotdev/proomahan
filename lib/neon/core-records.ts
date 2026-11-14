@@ -2,6 +2,7 @@ import "server-only";
 import { withActorTenant,DatabaseAccessError,validUuid } from "./tenant-context.ts";
 import { coreInput,type CoreResource,realDate } from "./core-input.ts";
 import { bulkInput } from "./bulk-input.ts";
+import { deleteInput } from "./delete-input.ts";
 import type { PoolClient } from "pg";
 
 export async function listRecords(actorId:string,tenantId:string,resource:CoreResource,url:URL) {
@@ -36,6 +37,32 @@ export async function listRecords(actorId:string,tenantId:string,resource:CoreRe
   return {rows:rows.rows,total,page:actualPage,pageSize:20,canManage:admin};
  });
 }
+export async function deleteRecords(actorId:string,tenantId:string,resource:CoreResource,body:Record<string,unknown>) {
+ let records:ReturnType<typeof deleteInput>;
+ try { records=deleteInput(body.records); }
+ catch(error) { throw new DatabaseAccessError((error as Error).message,400); }
+ try {
+  return await withActorTenant(actorId,tenantId,async db=>{
+   const ids=records.map(record=>record.id);
+   const locked=await db.query<{id:string;row_version:string}>(`SELECT id,row_version FROM app.${resource} WHERE tenant_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR UPDATE`,[tenantId,ids]);
+   const versions=new Map(locked.rows.map(row=>[row.id,String(row.row_version)]));
+   if(records.some(record=>versions.get(record.id)!==record.rowVersion)) {
+    throw new DatabaseAccessError("Data sudah berubah atau tidak tersedia. Muat ulang halaman sebelum menghapus.",409);
+   }
+   for(const record of records) {
+    await db.query(`DELETE FROM app.${resource} WHERE tenant_id=$1 AND id=$2`,[tenantId,record.id]);
+    await audit(db,tenantId,actorId,`${resource}.deleted`,resource,record.id,{});
+   }
+   return {deleted:records.length};
+  },["neighborhood_admin"]);
+ } catch(error) {
+  if((error as {code?:string})?.code==="23503") {
+   throw new DatabaseAccessError("Data masih terhubung dengan akun, unit, tagihan, atau riwayat lain. Tidak ada data yang dihapus. Gunakan arsip untuk menyimpan riwayat.",409);
+  }
+  throw error;
+ }
+}
+
 export async function saveRecord(actorId:string,tenantId:string,resource:CoreResource,body:Record<string,unknown>,id?:string) {
  let input:ReturnType<typeof coreInput>;
  try{input=coreInput(resource,body);}catch(error){throw new DatabaseAccessError(error instanceof Error?error.message:"Periksa isian formulir.",400);}
