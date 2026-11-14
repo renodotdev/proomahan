@@ -1,12 +1,12 @@
 # Proomahan — neighborhood management platform
 
-MVP planning baseline and interactive frontend prototype · 7 November 2026.
+Neon-backed neighborhood management application.
 
-Brand: **Proomahan**. Initial neighborhood: **D'Park City**. Indonesian interface; minimal teal and neutral visual direction. The prototype uses fictional browser-local data. The selected production target is Neon PostgreSQL, Neon Auth, and Neon Object Storage. Phone/password sign-in is available at `/sign-in`; live cluster, resident, unit, occupancy and account workflows are at `/workspace`, with private files at `/documents`. The broader prototype still uses simulated roles and browser-local billing/cash data.
+Brand: **Proomahan**. Initial neighborhood: **D'Park City**. Indonesian interface; minimal teal and neutral visual direction. Application records are read from Neon; the interactive preview and its browser-local dataset have been removed. The selected production target is Neon PostgreSQL, Neon Auth, and Neon Object Storage. Phone/password sign-in is available at `/sign-in`; live cluster, resident, unit, occupancy and account workflows are at `/workspace`, with private files at `/documents`. Billing, cash, news, and other unfinished modules are unavailable until their live server adapters are implemented.
 
 Build one responsive web application with an administration workspace and a resident portal. Start with one neighborhood, while keeping neighborhood isolation in the database and authorization from the beginning.
 
-## Run the clickable prototype
+## Run the application
 
 Requires a working Node.js 24 installation and npm.
 
@@ -15,9 +15,9 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Use **Publik**, **Admin**, and **Warga** in the preview bar to switch perspectives. Start in the administrator dashboard. Prototype changes persist in this browser; **Pengaturan → Atur ulang data contoh** restores the fixtures.
+Open `http://localhost:3000`; the homepage redirects to `/workspace`, which requires a real account. Run `npm run setup:admin` to create the initial administrator, then sign in at `/sign-in`. Old browser preview snapshots are removed when the app loads. Fictional datasets exist only as test fixtures.
 
-Checks: `npm test`, `npm run typecheck`, and `npm run build`. See [prototype review instructions](docs/06-prototype-review.md) for the main click-through paths and limitations.
+Checks: `npm test`, `npm run typecheck`, and `npm run build`. Historical prototype review documents describe the retired preview, not the current application.
 
 ## Planning documents
 
@@ -87,6 +87,6 @@ Latest QA: [public, resident, and administrator UI/UX regression review](docs/14
 
 Current infrastructure setup: [Neon setup and verification](docs/15-neon-setup.md). Earlier planning documents retain Supabase-specific details as historical design notes; they must be adapted to Neon before backend implementation.
 
-Deployed database: [Neon schema and server access](docs/16-neon-database-schema.md). Production contains 47 application tables, two reporting views and seven applied migrations. Run `npm run db:status` to inspect it. The main frontend still uses demo data until its feature adapters are connected.
+Deployed database: [Neon schema and server access](docs/16-neon-database-schema.md). Production contains 47 application tables, two reporting views and eight applied migrations. Run `npm run db:status` to inspect it. The application exposes only workflows connected to Neon; unfinished feature adapters remain implementation work.
 
 Latest implementation: [phone login and live core data](docs/17-phone-login-and-live-core.md). Run `npm run setup:admin` locally to enter the first permanent administrator password privately; the approved name and phone are already configured in ignored local settings.

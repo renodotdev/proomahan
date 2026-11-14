@@ -1,6 +1,7 @@
 import test from "node:test";
+import { createDemo } from "./fixtures/demo.ts";
 import assert from "node:assert/strict";
-import { createDemo, currency, decidePayment, submitPayment, previewInvoices, remaining, type Payment } from "../lib/demo.ts";
+import { currency, decidePayment, submitPayment, previewInvoices, remaining, type Payment } from "../lib/demo.ts";
 
 test("a submission leaves the balance outstanding until verified and cannot be applied twice", () => {
   const before = createDemo();

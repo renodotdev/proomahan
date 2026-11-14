@@ -12,7 +12,7 @@ type AuthAdmin = {
   revokeUserSessions(input: { userId: string }): Promise<{ error: unknown }>;
 };
 
-// Resolve secrets at request time so the demo can still build before provisioning.
+// Resolve secrets at request time so the app can build before provisioning.
 export function getAuth() {
   return createNeonAuth(authEnvironment());
 }

@@ -1,5 +1,5 @@
-import Prototype from "@/components/prototype";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <Prototype />;
+  redirect("/workspace");
 }
