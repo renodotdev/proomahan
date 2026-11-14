@@ -123,3 +123,22 @@ input::placeholder,textarea::placeholder{color:#64766b;opacity:1}.footer-note{co
  .neon-document-list input[type=checkbox] { flex: 0 0 20px; }
  .neon-document-list li>span { flex-basis: calc(100% - 76px); }
 }
+
+/* Dashboard navigation for the Neon workspace. */
+.live-shell{padding-left:248px}
+.workspace-sidebar{position:fixed;inset:0 auto 0 0;width:248px;padding:30px 20px 20px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:30;overflow-y:auto}
+.workspace-sidebar .live-brand,.workspace-drawer .live-brand{display:block;padding:0 12px}
+.workspace-nav-heading{margin:28px 12px 20px;display:grid;gap:8px;overflow-wrap:anywhere}
+.workspace-nav-heading strong{font-size:14px;color:var(--text)}
+.workspace-nav-label{display:block;margin:22px 13px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#63766e;font-weight:600}
+.workspace-sign-out{margin-top:auto;border-top:1px solid var(--line);border-radius:0;padding-top:18px}
+.workspace-sidebar nav,.workspace-drawer nav{padding-bottom:24px}
+.workspace-sidebar .nav-item,.workspace-drawer .nav-item{font-size:13px;min-height:46px}
+.workspace-sidebar .nav-item:disabled,.workspace-drawer .nav-item:disabled{opacity:.5;cursor:not-allowed}
+.workspace-mobile-bar{display:none}
+.workspace-drawer{margin:0;inset:0 auto 0 0;width:min(320px,calc(100vw - 32px));height:100dvh;max-height:100dvh;max-width:none;padding:20px;border:0;border-right:1px solid var(--line);background:#fff;color:var(--text)}
+.workspace-drawer[open]{display:flex;flex-direction:column}
+.workspace-drawer::backdrop{background:#1d333e6b;backdrop-filter:blur(3px)}
+.workspace-drawer-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
+.workspace-drawer-heading h2{font-size:15px}
+@media(max-width:760px){.live-shell{padding-left:0}.workspace-sidebar{display:none}.workspace-mobile-bar{position:sticky;top:0;z-index:25;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--line)}.workspace-mobile-bar .live-brand{font-size:23px}}

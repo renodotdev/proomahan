@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`; signed-out visitors see the public landing page, while signed-in users continue to `/workspace`. The sign-in page includes a return link to the landing page. Run `npm run setup:admin` to create the initial administrator, then sign in at `/sign-in`. Old browser preview snapshots are removed when the app loads. Fictional datasets exist only as test fixtures.
+Open `http://localhost:3000`; the public landing page is accessible to everyone, including signed-in users. The authenticated workspace is available at `/workspace`, with role-aware sidebar navigation and a mobile menu drawer. Signed-in visitors see Dashboard links on the landing page, and `/sign-in` redirects them to `/workspace`. Signed-out visitors can return to the landing page from sign-in. Run `npm run setup:admin` to create the initial administrator, then sign in at `/sign-in`. Old browser preview snapshots are removed when the app loads. Fictional datasets exist only as test fixtures.
 
 Checks: `npm test`, `npm run typecheck`, and `npm run build`. Historical prototype review documents describe the retired preview, not the current application.
 
@@ -90,3 +90,5 @@ Current infrastructure setup: [Neon setup and verification](docs/15-neon-setup.m
 Deployed database: [Neon schema and server access](docs/16-neon-database-schema.md). Production contains 47 application tables, two reporting views and eight applied migrations. Run `npm run db:status` to inspect it. The application exposes only workflows connected to Neon; unfinished feature adapters remain implementation work.
 
 Latest implementation: [phone login and live core data](docs/17-phone-login-and-live-core.md). Run `npm run setup:admin` locally to enter the first permanent administrator password privately; the approved name and phone are already configured in ignored local settings.
+
+Dashboard performance: [shared navigation and private in-memory caching](docs/18-dashboard-caching.md). Account details, neighborhood context, lists, dropdowns, and documents reuse scoped TanStack Query caches across dashboard navigation. No private API data is persisted to browser storage.

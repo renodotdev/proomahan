@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ConfirmationProvider from "@/components/action-confirmation";
 import RemovePreviewData from "@/components/remove-preview-data";
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="id"><body><RemovePreviewData />{children}</body></html>;
+  return <html lang="id"><body><ConfirmationProvider><RemovePreviewData />{children}</ConfirmationProvider></body></html>;
 }
