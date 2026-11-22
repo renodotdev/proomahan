@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getVerifiedSession } from "@/lib/neon/auth-server";
 import { getDatabase } from "@/lib/neon/database";
 import { getStorage } from "@/lib/neon/storage";
-import { documentExtension, documentPrefix, MAX_DOCUMENT_SIZE, ownedDocumentKey } from "@/lib/neon/document-key";
+import { documentExtension, documentPrefix, MAX_DOCUMENT_SIZE, ownedDocumentKey, readDocumentName } from "@/lib/neon/document-key";
 import { apiError,jsonBody } from "@/lib/neon/request";
 import { DatabaseAccessError } from "@/lib/neon/tenant-context";
 
@@ -45,13 +45,27 @@ async function handle(request: Request) {
       }
       if (request.method !== "GET") return Response.json({ error: "Permintaan tidak valid." }, { status: 400, headers });
       const file = await storage.download(key);
-      return new Response(await file.arrayBuffer(), { headers: { ...headers, "Content-Type": file.contentType, "Content-Disposition": 'attachment; filename="dokumen.' + key.split(".").pop() + '"', "X-Content-Type-Options": "nosniff" } });
+      const name = readDocumentName(file.metadata?.["original-name"]);
+      const fallback = `dokumen.${key.split(".").pop()}`;
+      const filename = name ? encodeURIComponent(name).replace(/[!'()*]/g, value => `%${value.charCodeAt(0).toString(16)}`) : "";
+      const disposition = `attachment; filename="${fallback}"${filename ? `; filename*=UTF-8''${filename}` : ""}`;
+      return new Response(await file.arrayBuffer(), { headers: { ...headers, "Content-Type": file.contentType, "Content-Disposition": disposition, "X-Content-Type-Options": "nosniff" } });
     }
     if (request.method === "GET") {
       const cursor = url.searchParams.get("cursor") || undefined;
       if (cursor && cursor.length > 4096) return Response.json({ error: "Halaman tidak valid." }, { status: 400, headers });
       const result = await storage.list({ prefix: documentPrefix(userId), limit: 20, cursor });
-      return Response.json({ owner: profile.rows[0].name, files: result.items, cursor: result.cursor }, { headers });
+      const items = result.items.filter(item => ownedDocumentKey(userId, item.key));
+      const metadataKeys = items.filter(item => item.metadata?.["original-name"] === undefined).map(item => item.key);
+      const metadata = metadataKeys.length ? await storage.head(metadataKeys, { concurrency: 6 }) : { results: [] };
+      const byKey = new Map(metadata.results.map(item => [item.key, item.metadata]));
+      const files = items.map(item => ({
+        key: item.key,
+        size: item.size,
+        lastModified: item.lastModified,
+        name: readDocumentName(item.metadata?.["original-name"] ?? byKey.get(item.key)?.["original-name"]),
+      }));
+      return Response.json({ owner: profile.rows[0].name, files, cursor: result.cursor }, { headers });
     }
     if (request.method !== "POST") return Response.json({ error: "Pilih dokumen terlebih dahulu." }, { status: 400, headers });
     if (Number(request.headers.get("content-length")) > MAX_DOCUMENT_SIZE + 65536) return Response.json({ error: "Ukuran dokumen maksimal 3 MB." }, { status: 413, headers });
@@ -71,7 +85,8 @@ async function handle(request: Request) {
     if (!extension) return Response.json({ error: "Gunakan dokumen PDF atau gambar JPG/PNG." }, { status: 400, headers });
     const newKey = `${documentPrefix(userId)}${randomUUID()}.${extension}`;
     const contentType = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg" }[extension];
-    await storage.upload(newKey, bytes, { contentType });
+    const originalName = readDocumentName(request.headers.get("x-document-name"));
+    await storage.upload(newKey, bytes, { contentType, ...(originalName ? { metadata: { "original-name": encodeURIComponent(originalName) } } : {}) });
     return Response.json({ key: newKey, size: bytes.length }, { status: 201, headers });
   } catch(error) {
     if(error instanceof DatabaseAccessError)return apiError(error);

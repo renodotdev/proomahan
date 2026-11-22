@@ -10,7 +10,7 @@ export default function PublicLanding({ signedIn }: { signedIn: boolean }) {
   return <div className="public-page">
     <header className="public-header">
       <Link href="/" aria-label="Halaman utama Proomahan"><Logo /></Link>
-      <nav aria-label="Navigasi publik"><a href="#tentang">Lingkungan kita</a><a href="#layanan">Layanan warga</a></nav>
+      <nav aria-label="Navigasi publik"><a href="#tentang"><MapPin size={15} aria-hidden="true" />Lingkungan kita</a><a href="#layanan"><UsersRound size={15} aria-hidden="true" />Layanan warga</a></nav>
       <Link href={portalHref} className="button primary">{signedIn ? "Dashboard" : "Masuk"} <ArrowRight size={16} /></Link>
     </header>
     <main id="main-content">

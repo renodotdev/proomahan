@@ -1,7 +1,15 @@
 import { getVerifiedSession } from "@/lib/neon/auth-server";
-import { changeOccupancy } from "@/lib/neon/core-records";
+import { changeOccupancy, getOccupancyDetails } from "@/lib/neon/core-records";
 import { DatabaseAccessError } from "@/lib/neon/tenant-context";
 import { assertSameOrigin,jsonBody,apiError } from "@/lib/neon/request";
+export async function GET(_request: Request, { params }: { params: Promise<{ tenantId: string; unitId: string }> }) {
+ try {
+  const { data: session } = await getVerifiedSession();
+  if (!session?.user) throw new DatabaseAccessError("Silakan masuk terlebih dahulu.", 401);
+  const { tenantId, unitId } = await params;
+  return Response.json(await getOccupancyDetails(session.user.id, tenantId, unitId), { headers: { "Cache-Control": "private, no-store" } });
+ } catch (error) { return apiError(error); }
+}
 export async function POST(request:Request,{params}:{params:Promise<{tenantId:string;unitId:string}>}) {
  try{
   assertSameOrigin(request);

@@ -12,3 +12,13 @@ export function documentExtension(bytes: Uint8Array): "pdf" | "png" | "jpg" | nu
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "jpg";
   return null;
 }
+
+export function readDocumentName(encoded: string | null | undefined) {
+  if (!encoded || encoded.length > 2400) return null;
+  try {
+    const name = decodeURIComponent(encoded).normalize().replace(/[\u0000-\u001f\u007f/\\]/g, "").trim();
+    return Array.from(name).slice(0, 180).join("") || null;
+  } catch {
+    return null;
+  }
+}

@@ -5,6 +5,10 @@ import { bulkInput } from "./bulk-input.ts";
 import { deleteInput } from "./delete-input.ts";
 import type { PoolClient } from "pg";
 
+function currentUnitAccess(actorParameter: string) {
+ return `(EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.unit_ownerships o ON (o.tenant_id,o.person_id)=(tm.tenant_id,tm.person_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=${actorParameter} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE)) OR EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.occupancy_members m ON (m.tenant_id,m.person_id)=(tm.tenant_id,tm.person_id) JOIN app.unit_occupancies o ON (o.tenant_id,o.id)=(m.tenant_id,m.occupancy_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=${actorParameter} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE) AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE)))`;
+}
+
 export async function listRecords(actorId:string,tenantId:string,resource:CoreResource,url:URL) {
  return withActorTenant(actorId,tenantId,async(db,roles)=>{
   const admin=roles.includes("super_admin")||roles.includes("neighborhood_admin");
@@ -16,7 +20,7 @@ export async function listRecords(actorId:string,tenantId:string,resource:CoreRe
   const params:unknown[]=[tenantId];
   const bind=(value:unknown)=>{params.push(value);return `$${params.length}`;};
   let select:string; const where=["r.tenant_id=$1"];
-  if(resource==="clusters") { select="r.id,r.code,r.name,r.archived_at,r.row_version"; if(q) where.push(`(r.name ILIKE ${bind('%'+q+'%')} OR r.code ILIKE $${params.length})`); }
+  if(resource==="clusters") { select="r.id,r.code,r.name,r.archived_at,r.row_version"; if(q) where.push(`(r.name ILIKE ${bind('%'+q+'%')} OR r.code ILIKE $${params.length})`); if(cluster) where.push(`r.id=${bind(cluster)}`); }
   else if(resource==="people") {
    select="r.id,r.full_name,r.phone,r.email,r.documents_url,r.archived_at,r.row_version,EXISTS(SELECT 1 FROM app.tenant_memberships m WHERE m.tenant_id=r.tenant_id AND m.person_id=r.id) AS has_account";
    if(!admin) where.push(`r.id=(SELECT person_id FROM app.tenant_memberships WHERE user_id=${bind(actorId)} AND tenant_id=$1 AND status='active')`);
@@ -25,7 +29,7 @@ export async function listRecords(actorId:string,tenantId:string,resource:CoreRe
    select=`r.id,r.number,r.cluster_id,r.address_detail,r.available_for_rent,r.archived_at,r.row_version,c.name AS cluster_name,
     (SELECT p.full_name FROM app.unit_ownerships o JOIN app.people p ON (p.tenant_id,p.id)=(o.tenant_id,o.person_id) WHERE o.tenant_id=r.tenant_id AND o.unit_id=r.id AND o.is_primary_contact AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE) LIMIT 1) AS owner,
     (SELECT p.full_name FROM app.unit_occupancies o JOIN app.occupancy_members m ON (m.tenant_id,m.occupancy_id)=(o.tenant_id,o.id) JOIN app.people p ON (p.tenant_id,p.id)=(m.tenant_id,m.person_id) WHERE o.tenant_id=r.tenant_id AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE) AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE) ORDER BY m.is_primary_contact DESC LIMIT 1) AS occupant`;
-   if(!admin) where.push(`(EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.unit_ownerships o ON (o.tenant_id,o.person_id)=(tm.tenant_id,tm.person_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=${bind(actorId)} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE)) OR EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.occupancy_members m ON (m.tenant_id,m.person_id)=(tm.tenant_id,tm.person_id) JOIN app.unit_occupancies o ON (o.tenant_id,o.id)=(m.tenant_id,m.occupancy_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=$${params.length} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE) AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE)))`);
+   if(!admin) where.push(currentUnitAccess(bind(actorId)));
    if(q) where.push(`r.number ILIKE ${bind('%'+q+'%')}`);
    if(cluster) where.push(`r.cluster_id=${bind(cluster)}`);
   }
@@ -124,6 +128,34 @@ async function writeRecord(db:PoolClient,actorId:string,tenantId:string,resource
   await audit(db,tenantId,actorId,`${resource}.${id?'updated':'created'}`,resource,result.rows[0].id,{fields:columns});
   return result.rows[0];
 }
+export async function getOccupancyDetails(actorId: string, tenantId: string, unitId: string) {
+ if (!validUuid(unitId)) throw new DatabaseAccessError("Unit tidak valid.", 400);
+ return withActorTenant(actorId, tenantId, async (db, roles) => {
+  const admin = roles.includes("super_admin") || roles.includes("neighborhood_admin");
+  const unit = await db.query(`SELECT r.id FROM app.units r WHERE r.tenant_id=$1 AND r.id=$2
+   ${admin ? "" : `AND ${currentUnitAccess("$3")}`}`, admin ? [tenantId, unitId] : [tenantId, unitId, actorId]);
+  if (!unit.rows.length) throw new DatabaseAccessError("Unit tidak ditemukan.", 404);
+
+  const { rows } = await db.query(`
+   WITH residents AS (
+    SELECT o.id AS occupancy_id,m.id,m.person_id,p.full_name,o.occupancy_type,
+     greatest(o.start_date,m.start_date) AS starts_on,least(o.end_date,m.end_date) AS ends_on
+    FROM app.unit_occupancies o JOIN app.occupancy_members m ON (m.tenant_id,m.occupancy_id)=(o.tenant_id,o.id)
+    JOIN app.people p ON (p.tenant_id,p.id)=(m.tenant_id,m.person_id)
+    WHERE o.tenant_id=$1 AND o.unit_id=$2
+   ), dated AS (
+    SELECT *,CASE WHEN starts_on>CURRENT_DATE THEN 'scheduled'
+     WHEN ends_on<=CURRENT_DATE THEN 'past' ELSE 'current' END AS status FROM residents
+   )
+   SELECT id,full_name,occupancy_type,starts_on::text,ends_on::text,status
+   FROM dated WHERE $3::boolean OR status='current' OR person_id=(
+    SELECT person_id FROM app.tenant_memberships WHERE tenant_id=$1 AND user_id=$4 AND status='active'
+   )
+   ORDER BY starts_on DESC,full_name,id`, [tenantId, unitId, admin, actorId]);
+  return { occupants: rows };
+ });
+}
+
 export async function changeOccupancy(actorId:string,tenantId:string,unitId:string,body:Record<string,unknown>) {
  if(!validUuid(unitId)) throw new DatabaseAccessError("Unit tidak valid.",400);
  let date:string;try{date=realDate(body.date);}catch{throw new DatabaseAccessError("Tanggal tidak valid.",400);}

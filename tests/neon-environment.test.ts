@@ -16,7 +16,7 @@ test("auth requires HTTPS and a strong cookie secret", () => {
   assert.throws(() => authEnvironment({ ...env, NEON_AUTH_COOKIE_SECRET: "short" }), /32 characters/);
 });
 
-import { documentExtension, documentPrefix, ownedDocumentKey } from "../lib/neon/document-key.ts";
+import { readDocumentName, documentExtension, documentPrefix, ownedDocumentKey } from "../lib/neon/document-key.ts";
 test("document keys are confined to the authenticated owner", () => {
   const key = `${documentPrefix("user-a")}12345678-1234-1234-1234-123456789012.pdf`;
   assert.equal(ownedDocumentKey("user-a", key), true);
@@ -71,4 +71,11 @@ test("live resident input keeps contact phones normalized and restricts document
  for(const documentsUrl of ["http://example.test","javascript:alert(1)","https://user:password@example.test"])assert.throws(()=>coreInput("people",{fullName:"Warga",phone:"081234567890",documentsUrl}));
  assert.throws(()=>coreInput("clusters",{name:"A",code:"A; DROP TABLE"}));
  assert.equal(realDate("2028-02-29"),"2028-02-29");assert.throws(()=>realDate("2026-02-29"));
+});
+
+test("document names preserve Unicode and strip header and path controls", () => {
+  assert.equal(readDocumentName(encodeURIComponent("Berita Zürich.pdf")), "Berita Zürich.pdf");
+  assert.equal(readDocumentName(encodeURIComponent(" \r\nberkas/2026\\nota.pdf ")), "berkas2026nota.pdf");
+  assert.equal(readDocumentName("%E0%"), null);
+  assert.equal(readDocumentName(null), null);
 });

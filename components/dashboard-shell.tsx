@@ -80,10 +80,10 @@ function DashboardContent({ userId, client, children }: { userId: string; client
     } catch { setMessage("Belum dapat keluar. Silakan coba lagi."); setLeaving(false); }
   }
   const view = params.get("view");
-  const active = pathname === "/documents" ? "documents" : identity?.mustChangePassword || view === "password" ? "password" : view === "people" || view === "clusters" ? view : "units";
+  const active = pathname === "/documents" ? "documents" : pathname === "/bills" ? "bills" : identity?.mustChangePassword || view === "password" ? "password" : view === "people" || view === "clusters" ? view : "units";
   const error = account.error || summary.error;
   return <div className="live-shell">
-    <WorkspaceNavigation active={active} canManage={currentSummary?.roles.some(role => role === "super_admin" || role === "neighborhood_admin") || false} name={identity?.name || ""} disabled={!identity || identity.mustChangePassword || leaving} onChoose={resource => router.push(`/workspace?view=${resource}`)} onPassword={() => router.push("/workspace?view=password")} onSignOut={signOut} />
+    <WorkspaceNavigation active={active} canBill={currentSummary?.roles.some(role => role === "super_admin" || role === "billing_admin") || false} canManage={currentSummary?.roles.some(role => role === "super_admin" || role === "neighborhood_admin") || false} name={identity?.name || ""} disabled={!identity || identity.mustChangePassword || leaving} onChoose={resource => router.push(`/workspace?view=${resource}`)} onPassword={() => router.push("/workspace?view=password")} onSignOut={signOut} />
     <main className="live-main">
       {message && <p className="live-alert" role="alert">{message}</p>}
       {error ? <div className="live-alert" role="alert">{error.message}<button className="button secondary" onClick={() => { account.refetch(); if (tenant) summary.refetch(); }}>Coba lagi</button></div> : !identity || leaving ? <p role="status">{leaving ? "Keluar dari akun…" : "Memuat akun…"}</p> : <DashboardContext.Provider value={{ userId, identity, tenant, summary: currentSummary, api }}>

@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useId, useRef } from "react";
 import Link from "next/link";
-import { Building2, FileText, Globe, House, KeyRound, LogOut, Menu, UsersRound, X } from "lucide-react";
+import { Building2, FileText, Globe, House, KeyRound, LogOut, Menu, ReceiptText, UsersRound, X } from "lucide-react";
 import type { CoreResource } from "@/lib/neon/core-input";
 
 type Props = {
-  active: CoreResource | "password" | "documents";
+  active: CoreResource | "password" | "documents" | "bills";
   canManage: boolean;
+  canBill: boolean;
   name: string;
   disabled: boolean;
   onChoose: (resource: CoreResource) => void;
@@ -14,7 +15,7 @@ type Props = {
   onSignOut: () => void;
 };
 
-export default function WorkspaceNavigation({ active, canManage, name, disabled, onChoose, onPassword, onSignOut }: Props) {
+export default function WorkspaceNavigation({ active, canManage, canBill, name, disabled, onChoose, onPassword, onSignOut }: Props) {
   const drawer = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const drawerId = useId();
@@ -37,6 +38,7 @@ export default function WorkspaceNavigation({ active, canManage, name, disabled,
       <button type="button" className={`nav-item ${active === "people" ? "active" : ""}`} aria-current={active === "people" ? "page" : undefined} disabled={disabled} onClick={() => choose("people")}><UsersRound size={18} />{canManage ? "Warga" : "Profil saya"}</button>
       {canManage && <button type="button" className={`nav-item ${active === "clusters" ? "active" : ""}`} aria-current={active === "clusters" ? "page" : undefined} disabled={disabled} onClick={() => choose("clusters")}><Building2 size={18} />Klaster</button>}
       {disabled ? <button type="button" className="nav-item" disabled><FileText size={18} />Dokumen saya</button> : <Link href="/documents" className={`nav-item ${active === "documents" ? "active" : ""}`} aria-current={active === "documents" ? "page" : undefined} onClick={() => drawer.current?.close()}><FileText size={18} />Dokumen saya</Link>}
+      {disabled ? <button type="button" className="nav-item" disabled><ReceiptText size={18} />Tagihan saya</button> : <Link href="/bills" className={`nav-item ${active === "bills" ? "active" : ""}`} aria-current={active === "bills" ? "page" : undefined} onClick={() => drawer.current?.close()}><ReceiptText size={18} />{canBill ? "Tagihan" : "Tagihan saya"}</Link>}
       <span className="workspace-nav-label">Akun</span>
       <button type="button" className={`nav-item ${active === "password" ? "active" : ""}`} aria-current={active === "password" ? "page" : undefined} disabled={disabled} onClick={() => { drawer.current?.close(); onPassword(); }}><KeyRound size={18} />Ubah kata sandi</button>
       <Link href="/" className="nav-item" onClick={() => drawer.current?.close()}><Globe size={18} />Halaman publik</Link>
