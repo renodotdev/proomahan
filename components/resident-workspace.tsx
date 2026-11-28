@@ -36,7 +36,7 @@ function ResidentDetails({ data: { profile, units, contact }, showProfile }: {
   if (showProfile) return <>
     <dl className="resident-workspace-fields">
       <div><dt>Nama lengkap</dt><dd>{profile.name}</dd></div>
-      <div><dt>Nomor telepon</dt><dd>{profile.phone}</dd></div>
+      <div><dt>Nomor telepon</dt><dd>{profile.phone || "Belum diisi"}</dd></div>
       <div><dt>Email</dt><dd>{profile.email || "Belum diisi"}</dd></div>
     </dl>
     <CommunityHelp title="Ajukan koreksi" contact={contact}>Beri tahu pengurus data profil yang perlu diperbarui.</CommunityHelp>

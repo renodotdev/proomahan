@@ -5,26 +5,36 @@ import { invoiceInput, meterCharge, meterInput, occursInPeriod } from "./invoice
 import { billingStaff, getBillSchedules } from "./bill-schedules.ts";
 import { DatabaseAccessError, validUuid, withActorTenant } from "./tenant-context.ts";
 
-async function recipients(db: PoolClient, tenant: string, period: string, selection: { search: string } | { unit: string; person: string }) {
+async function recipients(db: PoolClient, tenant: string, selection: { search: string } | { unit: string; person: string }) {
   const search = "search" in selection;
-  const result = await db.query<{ unit_id: string; person_id: string; name: string; unit_label: string }>(`
-    WITH related AS (
-      SELECT unit_id,person_id FROM app.unit_ownerships
-      WHERE tenant_id=$1 AND start_date<=$2 AND (end_date IS NULL OR end_date>$2)
-      UNION
-      SELECT o.unit_id,m.person_id FROM app.unit_occupancies o
-      JOIN app.occupancy_members m ON (m.tenant_id,m.occupancy_id)=(o.tenant_id,o.id)
-      WHERE o.tenant_id=$1 AND o.start_date<=$2 AND (o.end_date IS NULL OR o.end_date>$2)
-        AND m.start_date<=$2 AND (m.end_date IS NULL OR m.end_date>$2)
+  const { rows } = await db.query<{ unit_id: string; person_id: string; name: string; unit_label: string; occupants: number }>(`
+    WITH occupants AS (
+      SELECT o.unit_id,m.person_id,m.is_primary_contact
+      FROM app.unit_occupancies o JOIN app.occupancy_members m USING (tenant_id)
+      WHERE o.tenant_id=$1 AND m.occupancy_id=o.id
+        AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE)
+        AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE)
+    ), candidates AS (
+      SELECT unit_id,person_id,CASE WHEN is_primary_contact THEN 0 ELSE 1 END AS priority FROM occupants
+      UNION ALL
+      SELECT unit_id,person_id,CASE WHEN is_primary_contact THEN 2 ELSE 3 END FROM app.unit_ownerships
+      WHERE tenant_id=$1 AND start_date<=CURRENT_DATE AND (end_date IS NULL OR end_date>CURRENT_DATE)
+    ), units AS (
+      SELECT u.id AS unit_id,p.id AS person_id,p.full_name AS name,concat(c.name,' · ',u.number) AS unit_label,
+        row_number() OVER (PARTITION BY u.id ORDER BY r.priority,p.full_name,p.id) AS position,
+        (SELECT count(DISTINCT person_id)::int FROM occupants WHERE unit_id=u.id) AS occupants
+      FROM candidates r JOIN app.units u ON u.tenant_id=$1 AND u.id=r.unit_id AND u.archived_at IS NULL
+      JOIN app.clusters c ON (c.tenant_id,c.id)=(u.tenant_id,u.cluster_id) AND c.archived_at IS NULL
+      JOIN app.people p ON p.tenant_id=$1 AND p.id=r.person_id AND p.archived_at IS NULL
+      WHERE ${search ? `(u.number ILIKE $2 OR c.name ILIKE $2 OR EXISTS (
+        SELECT 1 FROM candidates cr JOIN app.people cp ON cp.tenant_id=$1 AND cp.id=cr.person_id
+        WHERE cr.unit_id=u.id AND cp.archived_at IS NULL AND cp.full_name ILIKE $2))` : "u.id=$2"}
     )
-    SELECT u.id AS unit_id,p.id AS person_id,p.full_name AS name,concat(c.name,' · ',u.number) AS unit_label
-    FROM related r JOIN app.units u ON u.tenant_id=$1 AND u.id=r.unit_id
-    JOIN app.clusters c ON (c.tenant_id,c.id)=(u.tenant_id,u.cluster_id)
-    JOIN app.people p ON p.tenant_id=$1 AND p.id=r.person_id
-    WHERE ${search ? "(u.number ILIKE $3 OR c.name ILIKE $3 OR p.full_name ILIKE $3)" : "u.id=$3 AND p.id=$4"}
-    ORDER BY c.name,u.number,p.full_name,p.id LIMIT 20`,
-    search ? [tenant, period, `%${selection.search}%`] : [tenant, period, selection.unit, selection.person]);
-  return result.rows;
+    SELECT unit_id,person_id,name,unit_label,occupants FROM units
+    WHERE position=1 ${search ? "" : "AND person_id=$3"}
+    ORDER BY unit_label,unit_id LIMIT 20`,
+    search ? [tenant, `%${selection.search}%`] : [tenant, selection.unit, selection.person]);
+  return rows;
 }
 
 export async function listInvoices(actor: string, tenant: string, params: URLSearchParams) {
@@ -37,16 +47,20 @@ export async function listInvoices(actor: string, tenant: string, params: URLSea
     try { date = realDate(`${period}-01`); if (date.startsWith("0000")) throw new Error(); }
     catch { throw new DatabaseAccessError("Periode tagihan tidak valid.", 400); }
     return withActorTenant(actor, tenant, async db => ({
-      recipients: await recipients(db, tenant, date, { search: (params.get("q") || "").trim().slice(0, 100) }),
+      recipients: await recipients(db, tenant, { search: (params.get("q") || "").trim().slice(0, 100) }),
     }), billingStaff);
   }
   const ongoing = params.get("status") === "ongoing";
   const page = Math.max(1, Math.min(100000, Math.trunc(Number(params.get("page"))) || 1));
   return withActorTenant(actor, tenant, async (db, roles) => {
-    const canManage = roles.includes("super_admin") || roles.includes("billing_admin");
+    const canManage = !params.has("mine") && (roles.includes("super_admin") || roles.includes("billing_admin"));
     const { rows } = await db.query(`
       SELECT i.id,i.invoice_number,i.period::text,i.issue_date::text,i.due_date::text,i.status,i.kind,i.void_reason,
         i.total_amount,b.paid_amount,i.bill_to_name_snapshot,i.unit_label_snapshot,
+        EXISTS (SELECT 1 FROM app.invoice_participants n JOIN app.tenant_memberships m
+          ON (m.tenant_id,m.person_id)=(n.tenant_id,n.person_id)
+          WHERE (n.tenant_id,n.invoice_id)=(i.tenant_id,i.id) AND m.user_id=$3 AND m.status='active'
+            AND n.notification_created_at IS NOT NULL AND n.notification_read_at IS NULL) AS unread,
         (SELECT string_agg(it.name_snapshot, ', ' ORDER BY it.id) FROM app.invoice_items it
           WHERE (it.tenant_id,it.invoice_id)=(i.tenant_id,i.id)) AS items,
         (SELECT r.consumption::text FROM app.meter_readings r JOIN app.invoice_items it ON (it.tenant_id,it.id)=(r.tenant_id,r.invoice_item_id)
@@ -59,8 +73,15 @@ export async function listInvoices(actor: string, tenant: string, params: URLSea
             SELECT 1 FROM app.invoice_participants p WHERE (p.tenant_id,p.invoice_id,p.person_id)=(i.tenant_id,i.id,m.person_id)
           ))
       )))
-      AND (NOT $5::boolean OR (i.status='issued' AND b.paid_amount<i.total_amount))
-      ORDER BY i.period DESC,i.issue_date DESC,i.id DESC LIMIT 21 OFFSET $4`, [tenant, canManage, actor, (page - 1) * 20, ongoing]);
+      AND (NOT $5::boolean OR (i.status='issued' AND (b.paid_amount<i.total_amount OR (
+        NOT $2::boolean AND EXISTS (
+          SELECT 1 FROM app.invoice_participants n JOIN app.tenant_memberships m
+            ON (m.tenant_id,m.person_id)=(n.tenant_id,n.person_id)
+          WHERE (n.tenant_id,n.invoice_id)=(i.tenant_id,i.id) AND m.user_id=$3 AND m.status='active'
+            AND n.notification_created_at IS NOT NULL AND n.notification_read_at IS NULL
+        )
+      ))))
+      ORDER BY unread DESC,i.period DESC,i.issue_date DESC,i.id DESC LIMIT 21 OFFSET $4`, [tenant, canManage, actor, (page - 1) * 20, ongoing]);
     return { rows: rows.slice(0, 20), hasNext: rows.length > 20, canManage };
   });
 }
@@ -102,14 +123,23 @@ export async function changeInvoice(actor: string, tenant: string, body: Record<
     catch (error) { throw new DatabaseAccessError((error as Error).message, 400); }
     const { item, period, issueDate, dueDate } = input;
     if (schedule && !occursInPeriod(schedule, period)) throw new DatabaseAccessError("Jadwal ini tidak berlaku pada periode yang dipilih.", 400);
-    const [recipient] = await recipients(db, tenant, period, { unit: unitId, person: personId });
-    if (!recipient) throw new DatabaseAccessError("Penanggung tagihan harus tercatat sebagai pemilik atau penghuni pada awal periode.", 400);
+    await db.query("SELECT id FROM app.units WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tenant, unitId]);
+    const [recipient] = await recipients(db, tenant, { unit: unitId, person: personId });
+    if (!recipient) throw new DatabaseAccessError("Data penghuni atau pemilik unit berubah. Pilih ulang unit tagihan.", 400);
     const { rows: [today] } = await db.query<{ date: string; period: string }>(
       "SELECT CURRENT_DATE::text AS date,date_trunc('month',CURRENT_DATE)::date::text AS period");
     if (issueDate > today.date || (schedule && period > today.period)) {
       throw new DatabaseAccessError("Tanggal terbit dan periode jadwal tidak boleh setelah bulan berjalan.", 400);
     }
 
+    if (!schedule) {
+      const duplicate = await db.query(`SELECT 1 FROM app.invoices i
+        JOIN app.invoice_items it ON (it.tenant_id,it.invoice_id)=(i.tenant_id,i.id)
+        WHERE i.tenant_id=$1 AND i.unit_id=$2 AND i.period=$3 AND i.fee_schedule_id IS NULL
+          AND i.kind='dues' AND i.status<>'void' AND lower(it.name_snapshot)=lower($4) LIMIT 1`,
+      [tenant,unitId,period,item]);
+      if (duplicate.rows.length) throw new DatabaseAccessError("Iuran ini sudah dicatat untuk unit dan periode tersebut.",409);
+    }
     const reading = schedule?.tariff_id ? await recordMeterReading(db, tenant, actor, unitId, period, schedule.tariff_id, schedule.amount, body) : null;
     if (reading?.amount === "0") return { id: null };
     const amount = reading?.amount ?? input.amount;
@@ -127,6 +157,16 @@ export async function changeInvoice(actor: string, tenant: string, body: Record<
         reading?.consumption ?? "1", input.amount]);
     if (reading) await db.query("UPDATE app.meter_readings SET invoice_item_id=$3 WHERE tenant_id=$1 AND id=$2", [tenant, reading.id, line.rows[0].id]);
     await db.query("UPDATE app.invoices SET status='issued',issued_at=now() WHERE tenant_id=$1 AND id=$2", [tenant, id]);
+    await db.query(`
+      INSERT INTO app.invoice_participants (tenant_id,invoice_id,person_id,permission,granted_by,notification_created_at)
+      SELECT DISTINCT $1::uuid,$2::uuid,m.person_id,'submit_payment',$3::uuid,now()
+      FROM app.unit_occupancies o
+      JOIN app.occupancy_members m ON (m.tenant_id,m.occupancy_id)=(o.tenant_id,o.id)
+      JOIN app.people p ON (p.tenant_id,p.id)=(m.tenant_id,m.person_id)
+      WHERE o.tenant_id=$1 AND o.unit_id=$4 AND p.archived_at IS NULL
+        AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE)
+        AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE)
+      ON CONFLICT DO NOTHING`, [tenant, id, actor, unitId]);
     await db.query(`INSERT INTO app.audit_events(tenant_id,actor_user_id,action,entity_type,entity_id)
       VALUES ($1,$2,'invoice.recorded','invoice',$3)`, [tenant, actor, id]);
     return { id };

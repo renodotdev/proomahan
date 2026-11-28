@@ -2,7 +2,7 @@
 
 Neon-backed neighborhood management application.
 
-Brand: **Proomahan**. Initial neighborhood: **D'Park City**. Indonesian interface; minimal teal and neutral visual direction. Application records are read from Neon; the interactive preview and its browser-local dataset have been removed. The selected production target is Neon PostgreSQL, Neon Auth, and Neon Object Storage. Phone/password sign-in is available at `/sign-in`; live cluster, resident, unit, occupancy and account workflows are at `/workspace`, with private files at `/documents`. Billing, cash, news, and other unfinished modules are unavailable until their live server adapters are implemented.
+Brand: **Proomahan**. Initial neighborhood: **D'Park City**. Indonesian interface; minimal teal and neutral visual direction. Application records are read from Neon; the interactive preview and its browser-local dataset have been removed. The selected production target is Neon PostgreSQL, Neon Auth, and Neon Object Storage. Residents sign in by phone and password at `/sign-in`. The Super Administrator signs in as `super-admin-dpark` with the existing password. The workspace includes resident and unit records, vacancy and rental lists, a resident bulletin board, a summary dashboard, and public-page settings. Residents see unit bills and submit payment proof at `/bills`. Billing staff review submissions in **Verifikasi Pembayaran**.
 
 Build one responsive web application with an administration workspace and a resident portal. Start with one neighborhood, while keeping neighborhood isolation in the database and authorization from the beginning.
 
@@ -23,6 +23,17 @@ Account help reads active `pengurus` entries in `app.contact_entries`. Set `PROO
 
 After building, run `npm run neon:verify -- schema-validation-resident-portal --resident-portal-only` against an empty disposable fixture branch with the existing schema and Neon Auth enabled. Add `--project-id <id>` for a separate QA project. This mode seeds synthetic residents and contacts and runs the portal HTTP checks without requiring object storage.
 
+## Reconcile the KAS resident and unit roster
+
+Generate a private review sheet from the original PDF. Poppler's `pdftotext` must be available.
+
+```sh
+node --experimental-strip-types scripts/reconcile-kas.ts /path/to/KAS.pdf --review /path/to/kas-review.tsv
+node --experimental-strip-types scripts/reconcile-kas.ts /path/to/KAS.pdf --apply /path/to/kas-review.tsv
+```
+
+Before running `--apply`, fill in the confirmed relationship and start date. Accepted relationships are `owner`, `owner_occupied`, `rented`, `caretaker`, and `other`. Leave unverified rows blank. Use the existing resident ID if a resident is recorded under a different name or if multiple residents have the same name. The import commits the reviewed rows together and skips relationships already recorded. Keep the source and review sheet outside the repository.
+
 ## Planning documents
 
 | Document | Use it to decide |
@@ -40,7 +51,7 @@ After building, run `npm run neon:verify -- schema-validation-resident-portal --
 
 ## Confirmed requirements
 
-- Desktop and mobile web access; login with a phone number or email address and a password.
+- Desktop and mobile web access; login with a phone number or the Super Administrator ID, plus a password.
 - MVP accounts, access approval, login identifier changes, and password resets are managed manually by neighborhood administrators. No email/SMS verification, public registration, or automated recovery is required.
 - Elected administrators are residents with dated, combinable role appointments. Super Administrator has no automatic expiry and controls appointments; expiry preserves resident access.
 - Administrators manage residents, units, invoices, reminders, and activity news and media.
@@ -91,8 +102,8 @@ Latest QA: [public, resident, and administrator UI/UX regression review](docs/14
 
 Current infrastructure setup: [Neon setup and verification](docs/15-neon-setup.md). Earlier planning documents retain Supabase-specific details as historical design notes; they must be adapted to Neon before backend implementation.
 
-Deployed database: [Neon schema and server access](docs/16-neon-database-schema.md). Production contains 47 application tables, two reporting views and eight applied migrations. Run `npm run db:status` to inspect it. The application exposes only workflows connected to Neon; unfinished feature adapters remain implementation work.
+Deployed database: [Neon schema and server access](docs/16-neon-database-schema.md). Run `npm run db:status` to inspect it. The application exposes only workflows connected to Neon; unfinished feature adapters remain implementation work.
 
-Latest implementation: [phone login and live core data](docs/17-phone-login-and-live-core.md). Run `npm run setup:admin` locally to enter the first permanent administrator password privately; the approved name and phone are already configured in ignored local settings.
+Latest implementation: [phone login and live core data](docs/17-phone-login-and-live-core.md). Run `npm run setup:admin` locally to enter the first permanent administrator password privately; the name can be provided using the ignored local settings.
 
 Dashboard performance: [shared navigation and private in-memory caching](docs/18-dashboard-caching.md). Account details, neighborhood context, lists, dropdowns, and documents reuse scoped TanStack Query caches across dashboard navigation. No private API data is persisted to browser storage.

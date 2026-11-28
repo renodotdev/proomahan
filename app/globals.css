@@ -260,3 +260,12 @@ input::placeholder,textarea::placeholder{color:#64766b;opacity:1}.footer-note{co
   .public-header { flex-wrap: wrap; gap: 10px; }
   .public-header nav { display: flex; order: 3; width: 100%; justify-content: center; flex-wrap: wrap; gap: 2px 16px; border-top: 1px solid #dfe8df; }
 }
+
+.portal-stack{display:grid;gap:16px}
+.portal-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.portal-plain-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.portal-item{display:grid;gap:8px;border-bottom:1px solid var(--line);padding:8px 0}
+.portal-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:12px;margin:0}
+.portal-metrics>div{padding:14px 16px;border:1px solid var(--line);border-radius:10px}
+.portal-metrics dd{margin:6px 0 0;font-size:1.35rem;font-weight:650}
+.portal-metrics a{text-decoration:underline;text-underline-offset:3px}

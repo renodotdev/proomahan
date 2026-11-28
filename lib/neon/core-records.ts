@@ -159,7 +159,7 @@ export async function getOccupancyDetails(actorId: string, tenantId: string, uni
 export async function changeOccupancy(actorId:string,tenantId:string,unitId:string,body:Record<string,unknown>) {
  if(!validUuid(unitId)) throw new DatabaseAccessError("Unit tidak valid.",400);
  let date:string;try{date=realDate(body.date);}catch{throw new DatabaseAccessError("Tanggal tidak valid.",400);}
- if(!["check_in","check_out","owner"].includes(String(body.action))) throw new DatabaseAccessError("Tindakan tidak valid.",400);
+ if(!["check_in","check_out","owner","add_member"].includes(String(body.action))) throw new DatabaseAccessError("Tindakan tidak valid.",400);
  if(body.action!=="check_out" && (typeof body.personId!=="string"||!validUuid(body.personId))) throw new DatabaseAccessError("Pilih warga yang valid.",400);
  return withActorTenant(actorId,tenantId,async(db)=>{
   const unit=await db.query("SELECT id FROM app.units WHERE tenant_id=$1 AND id=$2 AND archived_at IS NULL FOR UPDATE",[tenantId,unitId]);
@@ -175,6 +175,13 @@ export async function changeOccupancy(actorId:string,tenantId:string,unitId:stri
    if(!["rented","owner_occupied","caretaker","other"].includes(String(body.occupancyType))) throw new DatabaseAccessError("Pilih jenis hunian.",400);
    const occupancy=await db.query("INSERT INTO app.unit_occupancies(tenant_id,unit_id,occupancy_type,start_date,recorded_by) VALUES ($1,$2,$3,$4,$5) RETURNING id",[tenantId,unitId,body.occupancyType,date,actorId]);
    await db.query("INSERT INTO app.occupancy_members(tenant_id,occupancy_id,person_id,start_date,is_primary_contact) VALUES ($1,$2,$3,$4,true)",[tenantId,occupancy.rows[0].id,body.personId,date]);
+  } else if (body.action === "add_member") {
+   const { rows: [stay] } = await db.query<{ id: string }>(`SELECT id FROM app.unit_occupancies
+    WHERE tenant_id=$1 AND unit_id=$2 AND start_date <= $3::date AND (end_date IS NULL OR end_date > $3::date)
+    AND start_date<=CURRENT_DATE AND (end_date IS NULL OR end_date>CURRENT_DATE) FOR UPDATE`, [tenantId,unitId,date]);
+   if (!stay) throw new DatabaseAccessError("Tanggal masuk harus berada dalam periode hunian yang aktif.",400);
+   await db.query(`INSERT INTO app.occupancy_members (tenant_id,occupancy_id,person_id,start_date,end_date)
+    SELECT tenant_id,id,$3,$4,end_date FROM app.unit_occupancies WHERE tenant_id=$1 AND id=$2`, [tenantId,stay.id,body.personId,date]);
   } else {
    const occupancy=await db.query("SELECT id FROM app.unit_occupancies WHERE tenant_id=$1 AND unit_id=$2 AND end_date IS NULL AND start_date<$3 FOR UPDATE",[tenantId,unitId,date]);
    if(!occupancy.rows.length) throw new DatabaseAccessError("Tidak ada hunian terbuka sebelum tanggal keluar tersebut.",400);

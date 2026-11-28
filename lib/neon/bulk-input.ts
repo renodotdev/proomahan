@@ -10,7 +10,7 @@ export const bulkColumns = {
  ],
  people: [
   { key: "fullName", label: "Nama lengkap *", example: "Warga Contoh" },
-  { key: "phone", label: "Nomor telepon *", example: "081234567890" },
+  { key: "phone", label: "Nomor telepon", example: "081234567890" },
   { key: "email", label: "Email kontak", example: "warga@example.com" },
   { key: "documentsUrl", label: "URL dokumen", example: "https://drive.google.com/example" },
  ],

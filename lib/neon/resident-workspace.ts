@@ -5,7 +5,7 @@ import { currentUnitAccess } from "./core-records.ts";
 import { withActorTenant } from "./tenant-context.ts";
 
 export type ResidentWorkspaceData = {
-  profile: { name: string; phone: string; email: string | null } | null;
+  profile: { name: string; phone: string | null; email: string | null } | null;
   units: { id: string; number: string; cluster: string; address: string | null }[];
   contact: CommunityContact | null;
 };

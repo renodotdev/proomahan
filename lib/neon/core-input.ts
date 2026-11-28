@@ -22,7 +22,8 @@ export function coreInput(resource:CoreResource,body:Record<string,unknown>) {
   const documentsUrl=text("documentsUrl",2000); const email=text("email",254);
   if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Email kontak tidak valid.");
   if(documentsUrl) { let url:URL; try{url=new URL(documentsUrl);}catch{throw new Error("URL dokumen harus berupa tautan HTTPS.");} if(url.protocol!=="https:" || url.username || url.password) throw new Error("URL dokumen harus berupa tautan HTTPS tanpa kredensial."); }
-  return {fullName:text("fullName",200,true),phone:normalizePhone(text("phone",25,true)),email,documentsUrl,archived};
+  const phone=text("phone",25);
+  return {fullName:text("fullName",200,true),phone:phone?normalizePhone(phone):null,email,documentsUrl,archived};
  }
  const clusterId=text("clusterId",36,true);
  if(!/^[0-9a-f-]{36}$/i.test(clusterId)) throw new Error("Pilih klaster yang valid.");

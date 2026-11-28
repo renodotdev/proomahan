@@ -3,7 +3,6 @@ import { Client } from "pg";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline/promises";
-import { normalizePhone } from "../lib/phone.ts";
 nextEnv.loadEnvConfig(process.cwd());
 const args=process.argv.slice(2);
 const option=(name:string)=>{const index=args.indexOf(name);return index<0?undefined:args[index+1];};
@@ -36,18 +35,17 @@ try{
  const exists=await db.query("SELECT id FROM app.platform_role_assignments WHERE revoked_at IS NULL");
  if(exists.rows.length&&!test){console.log("A permanent Super Administrator already exists. No account or password was changed.");}
  else{
-  let name=option("--name")||process.env.PROOMAHAN_BOOTSTRAP_NAME;let phone=option("--phone")||process.env.PROOMAHAN_BOOTSTRAP_PHONE;let password:string;
-  if(test){let input="";for await(const chunk of process.stdin)input+=chunk;const data=JSON.parse(input);name=data.name;phone=data.phone;password=data.password;}
+  let name=option("--name")||process.env.PROOMAHAN_BOOTSTRAP_NAME;let password:string;
+  if(test){let input="";for await(const chunk of process.stdin)input+=chunk;const data=JSON.parse(input);name=data.name;password=data.password;}
   else{
    if(!process.stdin.isTTY)throw new Error("Run interactively; never put passwords in command arguments");
    const rl=createInterface({input:process.stdin,output:process.stdout});
    if(!name)name=await rl.question("Nama Super Administrator: ");
-   if(!phone)phone=await rl.question("Nomor telepon: ");
    rl.close();password=await hidden("Kata sandi (12–128 karakter, tidak ditampilkan): ");
    if(password!==await hidden("Ulangi kata sandi: "))throw new Error("Passwords do not match");
   }
-  phone=normalizePhone(phone||"");name=name?.trim();
-  if(!name||name.length>200||typeof password!=="string"||password.length<12||password.length>128)throw new Error("Valid name, phone and a 12–128 character password are required");
+  name=name?.trim();
+  if(!name||name.length>200||typeof password!=="string"||password.length<12||password.length>128)throw new Error("Valid name and a 12–128 character password are required");
   const status=cli(["neon-auth","status",...branchArgs]);
   const baseUrl=branch?status.match(/Base URL:\s*(https:\/\/\S+)/)?.[1]:process.env.NEON_AUTH_BASE_URL;
   if(!baseUrl)throw new Error("Neon Auth endpoint is unavailable");
@@ -70,10 +68,10 @@ try{
   await db.query("INSERT INTO app.user_profiles(user_id,display_name,must_change_password,provisioned_by) VALUES ($1,$2,false,$1)",[createdId,name]);
   await db.query("INSERT INTO app.platform_role_assignments(user_id,assigned_by,reason) VALUES ($1,$1,'Initial operator bootstrap')",[createdId]);
   await db.query("INSERT INTO app.tenant_memberships(tenant_id,user_id) VALUES ($1,$2)",[tenant.rows[0].id,createdId]);
-  await db.query("INSERT INTO app_private.phone_login_identifiers(user_id,phone_e164,approved_by,reason) VALUES ($1,$2,$1,'Initial operator bootstrap')",[createdId,phone]);
+  await db.query("INSERT INTO app_private.admin_login_identifiers(identifier,user_id) VALUES ('super-admin-dpark',$1)",[createdId]);
   await db.query("INSERT INTO app.audit_events(tenant_id,actor_user_id,action,entity_type,entity_id) VALUES ($1,$2,'administrator.bootstrap','user',$2)",[tenant.rows[0].id,createdId]);
   await db.query("COMMIT");committed=true;
-  console.log("Super Administrator configured. Phone/password sign-in is ready; public signup is disabled. Password was not printed or saved to a file.");
+  console.log("Super Administrator configured. ID/password sign-in is ready; public signup is disabled. Password was not printed or saved to a file.");
  }
 }catch(error){await db.query("ROLLBACK").catch(()=>{});console.error("Setup failed:",error instanceof Error?error.message:"unknown error");process.exitCode=1;}
 finally{

@@ -2,18 +2,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import WorkspaceNavigation from "@/components/workspace-navigation";
+import WorkspaceNavigation, { type WorkspaceView } from "@/components/workspace-navigation";
 import { useConfirmation } from "@/components/action-confirmation";
 import { authClient } from "@/lib/neon/auth-client";
 import { cacheKeys, cacheTimes, createClientCache } from "@/lib/client-cache";
 
-type Identity = { userId: string; name: string; phone: string; mustChangePassword: boolean; tenants: { id: string; name: string }[] };
-type Summary = { selectedTenant: { roles: string[]; cluster_count: number } };
+type Identity = { userId: string; name: string; phone: string | null; mustChangePassword: boolean; tenants: { id: string; name: string }[] };
+type Summary = { selectedTenant: { roles: string[]; cluster_count: number; unread_bills: number } };
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 async function requestJSON<T = any>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...options, cache: "no-store", headers: { ...(options?.body instanceof Blob ? {} : { "Content-Type": "application/json" }), ...options?.headers } });
+  const response = await fetch(url, { ...options, cache: "no-store", headers: { ...(options?.body instanceof Blob || options?.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...options?.headers } });
   const data = await response.json();
   if (!response.ok) throw new ApiError(data.error || "Data belum dapat dimuat.", response.status);
   return data;
@@ -57,7 +57,7 @@ function DashboardContent({ userId, client, children }: { userId: string; client
   } });
   const identity = account.data;
   const tenant = identity?.tenants.some(item => item.id === selectedTenant) ? selectedTenant : identity?.tenants[0]?.id || "";
-  const summary = useQuery({ queryKey: cacheKeys.summary(userId, tenant), staleTime: cacheTimes.account, enabled: !!tenant && !identity?.mustChangePassword, queryFn: ({ signal }) => api<Summary>(`/api/workspace?tenantId=${encodeURIComponent(tenant)}`, { signal }) });
+  const summary = useQuery({ queryKey: cacheKeys.summary(userId, tenant), staleTime: cacheTimes.account, refetchInterval: 60_000, enabled: !!tenant && !identity?.mustChangePassword, queryFn: ({ signal }) => api<Summary>(`/api/workspace?tenantId=${encodeURIComponent(tenant)}`, { signal }) });
   const currentSummary = summary.isError ? undefined : summary.data?.selectedTenant;
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -80,11 +80,21 @@ function DashboardContent({ userId, client, children }: { userId: string; client
     } catch { setMessage("Belum dapat keluar. Silakan coba lagi."); setLeaving(false); }
   }
   const view = params.get("view");
-  const canManage = currentSummary?.roles.some(role => role === "super_admin" || role === "neighborhood_admin") ?? false;
-  const active = pathname === "/documents" ? "documents" : pathname === "/bills" ? "bills" : identity?.mustChangePassword || view === "password" ? "password" : view === "people" || (canManage && view === "clusters") ? view : "units";
+  const roles = currentSummary?.roles ?? [];
+  const staff = roles.length > 0;
+  const superAdmin = roles.includes("super_admin");
+  const canManage = superAdmin || roles.includes("neighborhood_admin");
+  const canBill = superAdmin || roles.includes("billing_admin");
+  let active: WorkspaceView = staff ? "summary" : "units";
+  if (pathname === "/documents") active = "documents";
+  else if (pathname === "/bills") active = "bills";
+  else if (identity?.mustChangePassword || view === "password") active = "password";
+  else if (view === "units" || view === "people" || view === "bulletin" || (canManage && view === "clusters") ||
+    (staff && (view === "summary" || view === "rentals")) || (superAdmin && view === "public-page") ||
+    (canBill && view === "payments")) active = view;
   const error = account.error || summary.error;
   return <div className="live-shell">
-    <WorkspaceNavigation active={active} canBill={currentSummary?.roles.some(role => role === "super_admin" || role === "billing_admin") || false} canManage={canManage} name={identity?.name || ""} disabled={!identity || identity.mustChangePassword || leaving} onChoose={resource => router.push(`/workspace?view=${resource}`)} onPassword={() => router.push("/workspace?view=password")} onSignOut={signOut} />
+    <WorkspaceNavigation active={active} staff={staff} superAdmin={superAdmin} canBill={canBill} unreadBills={currentSummary?.unread_bills ?? 0} canManage={canManage} name={identity?.name || ""} disabled={!identity || identity.mustChangePassword || leaving} onChoose={resource => router.push(`/workspace?view=${resource}`)} onPassword={() => router.push("/workspace?view=password")} onSignOut={signOut} />
     <main className="live-main">
       {message && <p className="live-alert" role="alert">{message}</p>}
       {error ? <div className="live-alert" role="alert">{error.message}<button className="button secondary" onClick={() => { account.refetch(); if (tenant) summary.refetch(); }}>Coba lagi</button></div> : !identity || leaving ? <p role="status">{leaving ? "Keluar dari akun…" : "Memuat akun…"}</p> : <DashboardContext.Provider value={{ userId, identity, tenant, summary: currentSummary, api }}>

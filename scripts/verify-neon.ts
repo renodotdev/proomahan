@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync,spawn } from "node:child_process";
 import { mkdtemp,readFile,chmod,rm } from "node:fs/promises";
 import { Client } from "pg";
-import { randomBytes,createHmac } from "node:crypto";
+import { randomBytes,randomUUID,createHmac } from "node:crypto";
 import { parseEnv } from "node:util";
 const branch=process.argv[2];
 if(!branch?.startsWith("schema-validation-"))throw new Error("Use a disposable schema-validation-* branch; production is forbidden");
@@ -50,7 +50,7 @@ async function verify() {
    await db.query("INSERT INTO app.tenants(name,slug) VALUES ('D''Park City','dpark-city') ON CONFLICT (slug) DO NOTHING");
   });
  }
- const result=execFileSync(process.execPath,['--experimental-strip-types','scripts/bootstrap-admin.ts','--branch',branch,'--test-input',...projectArgs],{input:JSON.stringify({name:'Integration administrator',phone:'081200000009',password}),encoding:'utf8',stdio:['pipe','pipe','pipe']});
+ const result=execFileSync(process.execPath,['--experimental-strip-types','scripts/bootstrap-admin.ts','--branch',branch,'--test-input',...projectArgs],{input:JSON.stringify({name:'Integration administrator',password}),encoding:'utf8',stdio:['pipe','pipe','pipe']});
  assert.ok(result.includes('Super Administrator configured'));assert.ok(!result.includes(password));checks++;
  assert.ok(/Disable Sign Up:\s*true/.test(cli(['neon-auth','config','email-password','get','--branch',branch])));checks++;
  server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--port','3003','--hostname','127.0.0.1'],{env,stdio:['ignore','pipe','pipe']});
@@ -59,13 +59,13 @@ async function verify() {
  const admin:Jar=new Map();const resident:Jar=new Map();const oldResident:Jar=new Map();
  await request('/api/workspace',undefined,'GET',undefined,401);
  await request('/api/auth/sign-in/email',undefined,'POST',{email:'not-used@example.test',password},403);
- await json('/api/login/phone',admin,'POST',{phone:'081200000009',password});
- const identity=await json('/api/workspace',admin);assert.equal(identity.name,'Integration administrator');assert.equal(identity.phone,'+6281200000009');assert.equal(identity.mustChangePassword,false);checks++;
+ await json('/api/login/phone',admin,'POST',{identifier:'super-admin-dpark',password});
+ const identity=await json('/api/workspace',admin);assert.equal(identity.name,'Integration administrator');assert.equal(identity.phone,null);assert.equal(identity.mustChangePassword,false);checks++;
  const tenant=identity.tenants.find((t:{name:string})=>t.name==="D'Park City").id;
  const base=`/api/neighborhoods/${tenant}`;
- for (const [phone, submitted] of [["081200000009","Wrong-password-example"],["081200000008",password]]) {
-  const error = await json('/api/login/phone',new Map(),'POST',{phone,password:submitted},401);
-  assert.equal(error.error, "Nomor telepon atau kata sandi tidak sesuai.");
+ for (const [identifier, submitted] of [["super-admin-dpark","Wrong-password-example"],["081200000008",password]]) {
+  const error = await json('/api/login/phone',new Map(),'POST',{identifier,password:submitted},401);
+  assert.equal(error.error, "ID, nomor telepon, atau kata sandi tidak sesuai.");
  }
  if (residentPortalOnly) {
   await verifyResidentPortal(admin, tenant, branchEnv.DATABASE_URL_UNPOOLED);
@@ -106,6 +106,26 @@ async function verify() {
  const downloaded=await request('/api/documents?key='+encodeURIComponent(uploaded.key),resident);assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),png);checks++;
  await request('/api/documents?key='+encodeURIComponent(uploaded.key),admin,'GET',undefined,404);
  await json('/api/documents?key='+encodeURIComponent(uploaded.key),resident,'DELETE');
+ const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const created = await json(base+'/invoices',admin,'POST',{
+  action:'record',unitId:unit.id,personId:person.id,item:'Fixture dues',amount:'50000',period:today.slice(0,7),issueDate:today,dueDate:today,
+ });
+ const bill = (await json(base+'/invoices',resident)).rows.find((item:{id:string})=>item.id===created.id);
+ assert.equal(bill.unread,true);
+ const details = await json(base+'/payments?invoice='+created.id,resident);
+ const proof = await json(base+'/payments/proof?invoice='+created.id,resident,'POST',png,201);
+ const submission = {action:'submit',invoice:created.id,proof:proof.id,key:randomUUID(),method:'bank_transfer',date:today,items:[{id:details.items[0].id,amount:'25000'}]};
+ const receipt = await json(base+'/payments',resident,'POST',submission);
+ assert.equal((await json(base+'/payments',resident,'POST',submission)).id,receipt.id);
+ assert.equal((await json(base+'/payments?invoice='+created.id,resident)).items[0].remaining,'50000');
+ await request(base+'/payments/proof?payment='+receipt.id,resident,'GET',undefined,403);
+ const evidence = await request(base+'/payments/proof?payment='+receipt.id,admin);
+ assert.deepEqual(Buffer.from(await evidence.arrayBuffer()),png);
+ const cashAccount = await json(base+'/payments',admin,'POST',{action:'account',name:'Fixture bank',kind:'bank'});
+ await json(base+'/payments',admin,'POST',{action:'verify',payment:receipt.id,account:cashAccount.id});
+ assert.equal((await json(base+'/payments?invoice='+created.id,resident)).items[0].remaining,'25000');
+ await json(base+'/payments',resident,'POST',{action:'read',invoice:created.id});
+ assert.equal((await json(base+'/invoices',resident)).rows.find((item:{id:string})=>item.id===created.id).unread,false);
  const resetPassword=randomBytes(24).toString('base64url');
  await json('/api/accounts/reset-password',admin,'POST',{tenantId:tenant,personId:person.id,password:resetPassword});
  await request('/api/workspace',resident,'GET',undefined,401);
@@ -121,7 +141,7 @@ async function verify() {
   await rateDb.query("INSERT INTO app_private.login_rate_limits(bucket_key,window_start,attempts) SELECT $1,date_trunc('minute',now())+make_interval(mins=>n),10 FROM generate_series(0,1) n ON CONFLICT(bucket_key,window_start) DO UPDATE SET attempts=10",[bucket]);
   await request('/api/login/phone',undefined,'POST',{phone:'0812 0000 0008',password},429);
  }finally{await rateDb.end();}
- console.log(`PASS ${checks} live phone/password, bootstrap, resident CRUD, occupancy, account provisioning, password-change, isolation and storage checks`);
+ console.log(`PASS ${checks} live ID/phone sign-in, bootstrap, resident CRUD, occupancy, account provisioning, billing and proof verification, password-change, isolation and storage checks`);
  console.log('PASS no SMS/email verification; upstream public signup restored to disabled');
  console.log('PASS old session revoked after password change; resident cannot administer or read another resident');
  console.log('All fixture identities and records are confined to the disposable test branch.');

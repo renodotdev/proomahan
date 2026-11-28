@@ -5,18 +5,20 @@ import { Archive, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConfirmation } from "@/components/action-confirmation";
 import { useDashboard } from "@/components/dashboard-shell";
+import { InvoicePayment } from "@/components/workspace-payments";
 import WorkspaceModal from "@/components/workspace-modal";
 import { billingFrequencies, meterCharge, meterInput, occursInPeriod, type BillSchedule } from "@/lib/neon/invoice-input";
 import { cacheKeys } from "@/lib/client-cache";
 
 type Invoice = {
-  id: string; invoice_number: string; period: string; issue_date: string; due_date: string;
+  id: string; unread: boolean; invoice_number: string; period: string; issue_date: string; due_date: string;
   status: "draft" | "issued" | "void"; kind: "dues" | "water"; items: string | null; void_reason: string | null;
   total_amount: string; paid_amount: string; consumption: string | null; bill_to_name_snapshot: string; unit_label_snapshot: string;
 };
-type Recipient = { unit_id: string; person_id: string; name: string; unit_label: string };
+type Recipient = { unit_id: string; person_id: string; name: string; unit_label: string; occupants: number };
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const yearMonth = new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", timeZone: "Asia/Jakarta" });
 const periodFormat = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric", timeZone: "UTC" });
 
 export default function WorkspaceBills() {
@@ -29,17 +31,21 @@ function BillsList() {
   const client = useQueryClient();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<"ongoing" | "all">("ongoing");
+  const [mineOverride, setMineOverride] = useState<boolean>();
+  const mine = mineOverride ?? ((summary?.unread_bills ?? 0) > 0);
+  const [paymentInvoice, setPaymentInvoice] = useState<string>();
+  const staff = summary?.roles.some(role => role === "super_admin" || role === "billing_admin");
   const [configuring, setConfiguring] = useState(false);
   const [editor, setEditor] = useState<{ invoice?: Invoice }>();
   const [notice, setNotice] = useState("");
   const url = `/api/neighborhoods/${tenant}/invoices`;
   const billKey = [...cacheKeys.tenant(userId, tenant), "invoices"];
   const query = useQuery({
-    queryKey: [...billKey, status, page], staleTime: 0,
-    queryFn: ({ signal }) => api<{ rows: Invoice[]; hasNext: boolean; canManage: boolean }>(`${url}?page=${page}&status=${status}`, { signal }),
+    queryKey: [...billKey, status, page, mine], staleTime: 0,
+    queryFn: ({ signal }) => api<{ rows: Invoice[]; hasNext: boolean; canManage: boolean }>(`${url}?page=${page}&status=${status}${mine ? "&mine=1" : ""}`, { signal }),
   });
 
-  const canManage = query.data?.canManage ?? !!summary?.roles.some(role => role === "super_admin" || role === "billing_admin");
+  const canManage = !mine && (query.data?.canManage ?? !!staff);
   const scheduleKey = [...cacheKeys.tenant(userId, tenant), "bill-schedules"];
   const catalog = useQuery({
     queryKey: scheduleKey, enabled: canManage,
@@ -47,12 +53,27 @@ function BillsList() {
   });
   const schedules = catalog.isSuccess ? catalog.data.schedules : [];
 
+  function openPayment(invoice: Invoice) {
+    setMineOverride(mine);
+    setPaymentInvoice(invoice.id);
+    if (invoice.unread) {
+      void api(`/api/neighborhoods/${tenant}/payments`, {
+        method: "POST", body: JSON.stringify({ action: "read", invoice: invoice.id }),
+      }).then(() => Promise.all([client.invalidateQueries({ queryKey: billKey }),
+        client.invalidateQueries({ queryKey: cacheKeys.summary(userId, tenant) })])).catch(() => undefined);
+    }
+  }
+
   return <>
     <section className="panel live-panel workspace-billing">
       <div className="live-section-heading">
         <h2 className="workspace-icon-label"><ReceiptText size={21} aria-hidden="true" />{query.isSuccess && !canManage ? "Tagihan saya" : "Tagihan"}</h2>
-        {canManage && <button className="button primary" disabled={!catalog.isSuccess} onClick={() => setEditor({})}><ReceiptText size={17} aria-hidden="true" />Catat tagihan</button>}
+        {canManage && <button className="button primary" onClick={() => setEditor({})}><ReceiptText size={17} aria-hidden="true" />Catat tagihan</button>}
       </div>
+      {staff && <div className="portal-actions" role="group" aria-label="Tampilan tagihan">
+        <button className="button secondary compact" aria-pressed={!mine} onClick={() => { setMineOverride(false); setPage(1); }}>Tagihan lingkungan</button>
+        <button className="button secondary compact" aria-pressed={mine} onClick={() => { setMineOverride(true); setPage(1); }}>Tagihan saya</button>
+      </div>}
       <div className="workspace-bill-filters" role="group" aria-label="Filter tagihan">
         <button className="button secondary compact" aria-pressed={status === "ongoing"} onClick={() => { setStatus("ongoing"); setPage(1); }}><Clock3 size={16} aria-hidden="true" />Sedang berjalan</button>
         <button className="button secondary compact" aria-pressed={status === "all"} onClick={() => { setStatus("all"); setPage(1); }}><Archive size={16} aria-hidden="true" />Semua tagihan</button>
@@ -62,7 +83,7 @@ function BillsList() {
       {query.error && <p className="live-alert" role="alert">{query.error.message} <button className="text-button" onClick={() => query.refetch()}>Coba lagi</button></p>}
       {query.isSuccess && (query.data.rows.length > 0 ? <ul className="workspace-bill-grid">
         {query.data.rows.map(invoice => <InvoiceCard key={invoice.id} invoice={invoice}
-          onVoid={canManage ? () => setEditor({ invoice }) : undefined} />)}
+          onVoid={canManage ? () => setEditor({ invoice }) : undefined} onPayment={!canManage ? () => openPayment(invoice) : undefined} />)}
       </ul> : <div className="live-empty">
         <ReceiptText size={28} aria-hidden="true" />
         <h3>{status === "ongoing" ? "Tidak ada tagihan berjalan" : "Belum ada tagihan pada halaman ini"}</h3>
@@ -91,21 +112,23 @@ function BillsList() {
         </li>)}
       </ul> : <div className="live-empty"><CalendarDays size={28} aria-hidden="true" /><h3>Belum ada jadwal tagihan</h3></div>)}
     </section>}
+    {paymentInvoice && <InvoicePayment invoice={paymentInvoice} close={() => setPaymentInvoice(undefined)} />}
     {configuring && canManage && catalog.isSuccess && <ScheduleEditor url={url} close={() => setConfiguring(false)} onSaved={async () => {
       setNotice("Jadwal tagihan tersimpan.");
       setConfiguring(false);
       await client.invalidateQueries({ queryKey: scheduleKey });
     }} />}
-    {editor && canManage && (editor.invoice || catalog.isSuccess) && <InvoiceEditor invoice={editor.invoice} url={url} schedules={schedules} close={() => setEditor(undefined)} onSaved={async ({ id }) => {
+    {editor && canManage && (editor.invoice || canManage) && <InvoiceEditor invoice={editor.invoice} url={url} schedules={schedules} close={() => setEditor(undefined)} onSaved={async ({ id }) => {
       setNotice(editor.invoice ? "Tagihan dibatalkan." : id ? "Tagihan berhasil dicatat." : "Angka meter tersimpan. Tidak ada biaya yang ditagihkan.");
       setEditor(undefined);
       if (!editor.invoice) setPage(1);
-      await client.invalidateQueries({ queryKey: billKey });
+      await Promise.all([client.invalidateQueries({ queryKey: billKey }),
+        client.invalidateQueries({ queryKey: cacheKeys.summary(userId, tenant) })]);
     }} />}
   </>;
 }
 
-function InvoiceCard({ invoice, onVoid }: { invoice: Invoice; onVoid?: () => void }) {
+function InvoiceCard({ invoice, onVoid, onPayment }: { invoice: Invoice; onVoid?: () => void; onPayment?: () => void }) {
   const paid = BigInt(invoice.paid_amount);
   const total = BigInt(invoice.total_amount);
   const settled = invoice.status === "issued" && paid >= total;
@@ -128,6 +151,8 @@ function InvoiceCard({ invoice, onVoid }: { invoice: Invoice; onVoid?: () => voi
     {invoice.void_reason && <p>Alasan pembatalan: {invoice.void_reason}</p>}
     <div className="workspace-bill-card-footer">
       <small>{invoice.invoice_number}</small>
+      {invoice.unread && <span className="live-status">Baru</span>}
+      {onPayment && <button className="button secondary compact" onClick={onPayment}>Rincian tagihan</button>}
       {onVoid && invoice.status === "issued" && paid === 0n && <button className="button secondary compact live-danger-outline" onClick={onVoid}
         aria-label={`Batalkan ${name}, unit ${invoice.unit_label_snapshot}`}><XCircle size={16} aria-hidden="true" />Batalkan</button>}
     </div>
@@ -141,12 +166,14 @@ function InvoiceEditor({ invoice, url, schedules, close, onSaved }: { invoice?: 
   const [scheduleId, setScheduleId] = useState("");
   const applicable = schedules.filter(schedule => occursInPeriod(schedule, `${period}-01`));
   const schedule = applicable.find(item => item.id === scheduleId);
+  const pastPeriod = !!period && period < yearMonth.format(new Date());
   const [search, setSearch] = useState("");
   const [readingError, setReadingError] = useState("");
+  const [recipientKey, setRecipientKey] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
   const recipients = useQuery({
     queryKey: [...cacheKeys.tenant(userId, tenant), "invoice-recipients", period, deferredSearch],
-    enabled: !invoice && !!period && !!deferredSearch,
+    enabled: !invoice && !!period,
     queryFn: ({ signal }) => api<{ recipients: Recipient[] }>(url + "?" + new URLSearchParams({ recipientPeriod: period, q: deferredSearch }), { signal }),
   });
   const mutation = useMutation({
@@ -175,6 +202,7 @@ function InvoiceEditor({ invoice, url, schedules, close, onSaved }: { invoice?: 
         return;
       }
     }
+    if (!invoice && pastPeriod) description += " Periode ini sudah berlalu. Tagihan akan diberikan kepada penghuni aktif yang tercatat saat ini.";
     if (!await confirm({ title: `${title}?`, description, confirmLabel: title })) return;
     mutation.mutate(invoice ? { ...data, action: "void", invoiceId: invoice.id } : { ...data, action: "record", unitId, personId });
   }
@@ -188,7 +216,7 @@ function InvoiceEditor({ invoice, url, schedules, close, onSaved }: { invoice?: 
         </> : <>
           <fieldset className="workspace-form-section">
             <legend className="workspace-icon-label"><CalendarDays size={18} aria-hidden="true" />Periode dan biaya</legend>
-            <label className="field"><span>Bulan tagihan</span><input name="period" type="month" placeholder="YYYY-MM" required value={period} onChange={event => { setPeriod(event.target.value); setScheduleId(""); setReadingError(""); }} /></label>
+            <label className="field"><span>Bulan tagihan</span><input name="period" type="month" placeholder="YYYY-MM" required value={period} onChange={event => { setPeriod(event.target.value); setScheduleId(""); setRecipientKey(""); setReadingError(""); }} /></label>
             <label className="field"><span>Jadwal tagihan</span><select name="scheduleId" disabled={!period} value={scheduleId} onChange={event => { setScheduleId(event.target.value); setReadingError(""); }}>
               <option value="">Iuran manual</option>
               {applicable.map(item => <option key={item.id} value={item.id}>{item.name} · {billingFrequencies[item.recurrence]}</option>)}
@@ -199,16 +227,18 @@ function InvoiceEditor({ invoice, url, schedules, close, onSaved }: { invoice?: 
             </div>}
           </fieldset>
           <fieldset className="workspace-form-section">
-            <legend className="workspace-icon-label"><House size={18} aria-hidden="true" />Unit dan penanggung</legend>
-            <label className="field"><span className="workspace-icon-label"><Search size={16} aria-hidden="true" />Cari unit atau penanggung</span>
-              <input value={search} disabled={!period} placeholder="Nomor unit, klaster, atau nama" onChange={event => setSearch(event.target.value)} maxLength={100} />
+            <legend className="workspace-icon-label"><House size={18} aria-hidden="true" />Unit tagihan</legend>
+            <label className="field"><span className="workspace-icon-label"><Search size={16} aria-hidden="true" />Cari unit, klaster, atau penghuni</span>
+              <input value={search} disabled={!period} placeholder="Nomor unit, klaster, atau nama" onChange={event => { setSearch(event.target.value); setRecipientKey(""); }} maxLength={100} />
             </label>
-            <label className="field"><span>Penanggung tagihan</span>
-              <select key={`${period}:${deferredSearch}`} name="recipient" required defaultValue="" disabled={!choices.length || search.trim() !== deferredSearch}>
-                <option value="">{choices.length ? "Pilih unit dan penanggung" : "Belum ada pilihan"}</option>
+            <label className="field"><span>Unit</span>
+              <select key={`${period}:${deferredSearch}`} name="recipient" required value={recipientKey} onChange={event => setRecipientKey(event.target.value)} disabled={!choices.length || search.trim() !== deferredSearch}>
+                <option value="">{choices.length ? "Pilih unit" : "Belum ada pilihan"}</option>
                 {choices.map(person => <option key={`${person.unit_id}:${person.person_id}`} value={`${person.unit_id}:${person.person_id}`}>{person.unit_label} · {person.name}</option>)}
               </select>
-              <small role="status">{!period ? "Pilih bulan tagihan dahulu." : !search.trim() ? "Masukkan kata pencarian untuk memuat penanggung." : recipients.isError ? "Pencarian belum berhasil." : recipients.isFetching || search.trim() !== deferredSearch ? "Mencari penanggung…" : !choices.length ? "Tidak ada hasil. Coba kata pencarian lain." : `${choices.length} pilihan ditemukan.`}</small>
+              {choices.filter(choice => recipientKey === `${choice.unit_id}:${choice.person_id}`).map(choice => <small key={choice.unit_id}>{choice.occupants ? `${choice.occupants} penghuni tercatat akan menerima akses tagihan di portal.` : "Unit ini tidak memiliki penghuni aktif. Tagihan akan dicatat atas nama pemilik yang ditampilkan."}</small>)}
+              {pastPeriod && <small>Periode lampau menggunakan data penghuni aktif saat ini. Periksa penerima sebelum menerbitkan.</small>}
+              <small role="status">{!period ? "Pilih bulan tagihan dahulu." : recipients.isError ? "Pencarian belum berhasil." : recipients.isFetching || search.trim() !== deferredSearch ? "Mencari penanggung…" : !choices.length ? "Tidak ada hasil. Coba kata pencarian lain." : `${choices.length} pilihan ditemukan.`}</small>
             </label>
             {recipients.error && <p className="live-alert" role="alert">{recipients.error.message} <button type="button" className="text-button" onClick={() => recipients.refetch()}><RefreshCw size={15} aria-hidden="true" />Coba lagi</button></p>}
           </fieldset>
@@ -233,7 +263,7 @@ function InvoiceEditor({ invoice, url, schedules, close, onSaved }: { invoice?: 
       </div>
       <div className="form-footer">
         <button className="button secondary" type="button" onClick={close} disabled={mutation.isPending}>Batal</button>
-        <button className={`button primary${invoice ? " live-danger" : ""}`} disabled={mutation.isPending || (!invoice && (!choices.length || search.trim() !== deferredSearch))}>{invoice ? <XCircle size={17} aria-hidden="true" /> : <Check size={17} aria-hidden="true" />}{mutation.isPending ? "Menyimpan…" : invoice ? "Batalkan tagihan" : "Tinjau tagihan"}</button>
+        <button className={`button primary${invoice ? " live-danger" : ""}`} disabled={mutation.isPending || (!invoice && (!recipientKey || search.trim() !== deferredSearch))}>{invoice ? <XCircle size={17} aria-hidden="true" /> : <Check size={17} aria-hidden="true" />}{mutation.isPending ? "Menyimpan…" : invoice ? "Batalkan tagihan" : "Tinjau tagihan"}</button>
       </div>
     </form>
   </WorkspaceModal>;

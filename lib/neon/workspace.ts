@@ -16,7 +16,15 @@ export async function workspaceIdentity() {
 export async function workspaceSummary(tenantId:string) {
  const identity=await workspaceIdentity();
  const summary=await withActorTenant(identity.userId,tenantId,async (db,roles)=>{
-  const result=await db.query<{id:string;name:string;cluster_count:number}>("SELECT t.id,t.name,(SELECT count(*)::int FROM app.clusters c WHERE c.tenant_id=t.id AND c.archived_at IS NULL) AS cluster_count FROM app.tenants t WHERE t.id=$1",[tenantId]);
+  const result=await db.query<{id:string;name:string;cluster_count:number;unread_bills:number}>(`
+    SELECT t.id,t.name,
+      (SELECT count(*)::int FROM app.clusters c WHERE c.tenant_id=t.id AND c.archived_at IS NULL) AS cluster_count,
+      (SELECT count(*)::int FROM app.invoice_participants p
+       JOIN app.tenant_memberships m ON (m.tenant_id,m.person_id)=(p.tenant_id,p.person_id)
+       JOIN app.invoices i ON (i.tenant_id,i.id)=(p.tenant_id,p.invoice_id)
+       WHERE p.tenant_id=t.id AND m.user_id=$2 AND m.status='active' AND i.status='issued'
+        AND p.notification_created_at IS NOT NULL AND p.notification_read_at IS NULL) AS unread_bills
+    FROM app.tenants t WHERE t.id=$1`,[tenantId,identity.userId]);
   return {...result.rows[0],roles};
  });
  return {...identity,selectedTenant:summary};
