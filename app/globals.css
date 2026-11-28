@@ -239,6 +239,21 @@ input::placeholder,textarea::placeholder{color:#64766b;opacity:1}.footer-note{co
 .signin-password > div { display: flex; gap: 8px; }
 .signin-password input { min-width: 0; flex: 1; }
 .button.signin-password-toggle { min-width: 46px; min-height: 46px; padding: 0; }
+.community-help-group { display: grid; gap: 8px; }
+.community-help-group h2 { font-size: 18px; }
+.community-help { border: 1px solid var(--line); border-radius: 8px; }
+.community-help summary { min-height: 44px; padding: 11px 12px; color: var(--teal); font-weight: 650; cursor: pointer; }
+.community-help summary:focus-visible, .community-help a:focus-visible { outline: 2px solid #187e6d; outline-offset: 2px; border-radius: 8px; }
+.community-help-body { display: grid; justify-items: start; gap: 8px; padding: 0 12px 12px; }
+.community-help-body p { margin: 0; }
+.community-help-body .button { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+.resident-workspace { display: grid; gap: 14px; overflow-wrap: anywhere; }
+.resident-workspace h2, .resident-workspace h3, .resident-workspace p, .resident-workspace dd { margin: 0; }
+.resident-workspace-fields, .resident-workspace-units { display: grid; gap: 12px; margin: 0; }
+.resident-workspace-fields dt { color: #52645b; font-size: 13px; }
+.resident-workspace-fields dd { margin-top: 3px; font-weight: 600; }
+.resident-workspace-units { list-style: none; padding: 0; }
+.resident-workspace-units > li { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
 .resident-document-name strong { overflow-wrap: anywhere; }
 .public-header nav > a { gap: 6px; }
 @media (max-width: 760px) {

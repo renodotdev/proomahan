@@ -19,6 +19,10 @@ Open `http://localhost:3000`; the public landing page is accessible to everyone,
 
 Checks: `npm test`, `npm run typecheck`, and `npm run build`. Historical prototype review documents describe the retired preview, not the current application.
 
+Account help reads active `pengurus` entries in `app.contact_entries`. Set `PROOMAHAN_PUBLIC_TENANT_SLUG` to the community shown on the public sign-in page. The default is `dpark-city`. Sign-in uses public entries. Signed-in residents use the selected community's resident-visible entries first, then public entries. Configure a community-owned number approved for the entry's visibility. The app shows in-person contact instructions when no usable number is configured.
+
+After building, run `npm run neon:verify -- schema-validation-resident-portal --resident-portal-only` against an empty disposable fixture branch with the existing schema and Neon Auth enabled. Add `--project-id <id>` for a separate QA project. This mode seeds synthetic residents and contacts and runs the portal HTTP checks without requiring object storage.
+
 ## Planning documents
 
 | Document | Use it to decide |

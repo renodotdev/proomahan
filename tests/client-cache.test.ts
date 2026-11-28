@@ -38,11 +38,14 @@ test("users, neighborhoods, filters and pages have isolated cache entries", t =>
     [...cacheKeys.records("user-a","tenant-a","people"), {page:2,q:"Andi"}],
     [...cacheKeys.records("user-a","tenant-a","people"), {page:1,q:"Dewi"}],
   ]) assert.equal(client.getQueryData(other), undefined);
+  client.setQueryData(cacheKeys.resident("user-a","tenant-a"), ["private profile"]);
+  assert.equal(client.getQueryData(cacheKeys.resident("user-b","tenant-a")), undefined);
+  assert.equal(client.getQueryData(cacheKeys.resident("user-a","tenant-b")), undefined);
 });
 
 test("cluster changes invalidate their dependent lists and summary without touching documents or other accounts", async t => {
   const client = createClientCache(); t.after(() => client.clear());
-  const affected = [cacheKeys.records("a","one","clusters"),cacheKeys.records("a","one","units"),cacheKeys.summary("a","one")];
+  const affected = [cacheKeys.records("a","one","clusters"),cacheKeys.records("a","one","units"),cacheKeys.summary("a","one"),cacheKeys.resident("a","one")];
   const unaffected = [cacheKeys.records("a","one","people"),cacheKeys.documents("a"),cacheKeys.account("a"),cacheKeys.records("b","one","clusters"),cacheKeys.records("a","two","clusters")];
   for (const key of [...affected,...unaffected]) client.setQueryData(key, []);
   await invalidateRecords(client,"a","one","clusters");

@@ -33,11 +33,23 @@ test("uploads check content signatures rather than trusting extensions", () => {
 });
 
 import { normalizePhone } from "../lib/phone.ts";
+import { contactLink } from "../lib/community-contact.ts";
 test("phone login normalizes Indonesian local numbers and preserves international E164",()=>{
  assert.equal(normalizePhone("0812-3456-7890"),"+6281234567890");
  assert.equal(normalizePhone("62 812 3456 7890"),"+6281234567890");
+ assert.equal(normalizePhone("081234567890"),normalizePhone("+6281234567890"));
  assert.equal(normalizePhone("+65 8123 4567"),"+6581234567");
  for(const value of ["", "user@example.com", "+620", "0812/3456/7890", "+628123456789012345"]) assert.throws(()=>normalizePhone(value));
+});
+
+test("community contact links prefer WhatsApp, fall back to phone, and reject invalid numbers", () => {
+ assert.deepEqual(contactLink("081200000001", "0812-0000-002"), {
+  href: "https://wa.me/628120000002", channel: "WhatsApp", number: "+628120000002",
+ });
+ assert.deepEqual(contactLink("+628120000001", "https://example.test"), {
+  href: "tel:+628120000001", channel: "Telepon", number: "+628120000001",
+ });
+ assert.equal(contactLink("javascript:alert(1)", null), null);
 });
 
 import { coreInput,realDate } from "../lib/neon/core-input.ts";

@@ -5,7 +5,7 @@ import { bulkInput } from "./bulk-input.ts";
 import { deleteInput } from "./delete-input.ts";
 import type { PoolClient } from "pg";
 
-function currentUnitAccess(actorParameter: string) {
+export function currentUnitAccess(actorParameter: string) {
  return `(EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.unit_ownerships o ON (o.tenant_id,o.person_id)=(tm.tenant_id,tm.person_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=${actorParameter} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE)) OR EXISTS(SELECT 1 FROM app.tenant_memberships tm JOIN app.occupancy_members m ON (m.tenant_id,m.person_id)=(tm.tenant_id,tm.person_id) JOIN app.unit_occupancies o ON (o.tenant_id,o.id)=(m.tenant_id,m.occupancy_id) WHERE tm.tenant_id=r.tenant_id AND tm.user_id=${actorParameter} AND tm.status='active' AND o.unit_id=r.id AND o.start_date<=CURRENT_DATE AND (o.end_date IS NULL OR o.end_date>CURRENT_DATE) AND m.start_date<=CURRENT_DATE AND (m.end_date IS NULL OR m.end_date>CURRENT_DATE)))`;
 }
 
